@@ -21,14 +21,10 @@ export async function createKernelBrowser(viewport?: { width: number; height: nu
   const created = await kernelClient().browsers.create({
     // 10 min idle timeout — a stuck job shouldn't burn browser hours
     timeout_seconds: 600,
+    // size the virtual display to the window at creation, otherwise the display
+    // defaults to 1920x1080 and the live view shows the window floating in dead space
+    ...(viewport ? { viewport } : {}),
   });
-  if (viewport) {
-    try {
-      await kernelClient().browsers.update(created.session_id, { viewport });
-    } catch {
-      // viewport update is cosmetic; screencast maxWidth/maxHeight bounds output anyway
-    }
-  }
   return {
     sessionId: created.session_id,
     cdpWsUrl: created.cdp_ws_url,

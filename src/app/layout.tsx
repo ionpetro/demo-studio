@@ -1,10 +1,18 @@
 import type { Metadata } from "next";
-import { Syne, Spline_Sans, Spline_Sans_Mono } from "next/font/google";
+import { JetBrains_Mono, Poppins } from "next/font/google";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
-const syne = Syne({ subsets: ["latin"], variable: "--font-display", weight: ["700", "800"] });
-const splineSans = Spline_Sans({ subsets: ["latin"], variable: "--font-body", weight: ["400", "500", "600"] });
-const splineMono = Spline_Sans_Mono({ subsets: ["latin"], variable: "--font-mono", weight: ["400", "500", "700"] });
+const poppins = Poppins({
+  subsets: ["latin"],
+  variable: "--font-poppins",
+  weight: ["400", "500", "600", "700"],
+});
+const mono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jbm",
+  weight: ["400", "500", "700"],
+});
 
 export const metadata: Metadata = {
   title: "Demo Studio",
@@ -13,9 +21,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className={`${syne.variable} ${splineSans.variable} ${splineMono.variable}`}>
-        {children}
+    <html lang="en" className="dark">
+      <body className={`${poppins.variable} ${mono.variable} font-sans antialiased`}>
+        <TooltipProvider>{children}</TooltipProvider>
         <div className="grain" aria-hidden />
       </body>
     </html>
