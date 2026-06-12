@@ -3,8 +3,10 @@ import path from "node:path";
 import { EventEmitter } from "node:events";
 import { Agent, type SDKAgent } from "@cursor/sdk";
 import { BrowserSession, observationText } from "./browser-session.ts";
+import { getLocalAgentStore } from "./sdk-store.ts";
 import { composeVideo } from "./compose.ts";
 import { createJob, jobDir } from "./jobs.ts";
+import { apiUrl } from "../lib/api-base.ts";
 import type {
   BrowserAction, DemoJob, DemoParams, Observation, Recipe, RecipeStep, SessionEvent, TimedCaption,
 } from "./types.ts";
@@ -104,7 +106,7 @@ export class AgentSession {
     this.agent = await Agent.create({
       apiKey,
       model: { id: "composer-2.5" },
-      local: { cwd: process.cwd(), customTools: this.buildTools() },
+      local: { cwd: process.cwd(), customTools: this.buildTools(), store: getLocalAgentStore() },
     });
     return this.agent;
   }
@@ -343,7 +345,12 @@ export class AgentSession {
             job.videoPath = out.finalPath;
             job.durationSec = out.durationSec;
             this.emit({ type: "job_status", jobId: job.id, status: "done" });
-            this.emit({ type: "video_ready", jobId: job.id, videoUrl: `/api/jobs/${job.id}/video`, durationSec: out.durationSec });
+            this.emit({
+              type: "video_ready",
+              jobId: job.id,
+              videoUrl: apiUrl(`/api/jobs/${job.id}/video`),
+              durationSec: out.durationSec,
+            });
 
             this.job = null;
             this.params = null;
@@ -374,11 +381,19 @@ const sessions: Map<string, AgentSession> = ((globalThis as any).__demoSessions 
 
 export function createSession(): AgentSession {
   const id = `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-  const s = new AgentSession(id);
-  sessions.set(id, s);
-  return s;
+  return getOrCreateSession(id);
 }
 
 export function getSession(id: string): AgentSession | undefined {
   return sessions.get(id);
+}
+
+/** Create on first use so a client-chosen id can stay on one serverless instance. */
+export function getOrCreateSession(id: string): AgentSession {
+  let session = sessions.get(id);
+  if (!session) {
+    session = new AgentSession(id);
+    sessions.set(id, session);
+  }
+  return session;
 }

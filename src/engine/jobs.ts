@@ -1,7 +1,8 @@
 import path from "node:path";
+import { writableDataDir } from "./paths.ts";
 import type { DemoJob } from "./types.ts";
 
-export const DATA_DIR = path.join(process.cwd(), "data");
+export const DATA_DIR = writableDataDir();
 
 export function jobDir(jobId: string): string {
   return path.join(DATA_DIR, "jobs", jobId);

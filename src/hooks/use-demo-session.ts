@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { apiUrl } from "@/lib/api-base";
+import { useCallback, useRef, useState } from "react";
 
 export type ChatPart =
   | { type: "text"; text: string }
@@ -25,12 +26,48 @@ export interface Tick {
   ok: boolean;
 }
 
+type SessionEvent =
+  | { type: "agent_text"; text: string }
+  | { type: "agent_turn_done" }
+  | { type: "tool_call"; name: string }
+  | { type: "plan"; goal: string; startUrl: string }
+  | { type: "job_created"; jobId: string }
+  | { type: "live_view"; url: string }
+  | { type: "action"; n: number; action: string; caption: string; ok: boolean }
+  | { type: "job_status"; status: string }
+  | { type: "video_ready"; jobId: string; videoUrl: string; durationSec: number }
+  | { type: "error"; message: string };
+
 let nextId = 0;
 const uid = (prefix: string) => `${prefix}-${++nextId}`;
 
+const newSessionId = () =>
+  `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+
+async function* readSseEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<SessionEvent> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let split = buffer.indexOf("\n\n");
+    while (split !== -1) {
+      const block = buffer.slice(0, split);
+      buffer = buffer.slice(split + 2);
+      const line = block.split("\n").find((l) => l.startsWith("data: "));
+      if (line) yield JSON.parse(line.slice(6)) as SessionEvent;
+      split = buffer.indexOf("\n\n");
+    }
+  }
+}
+
 /**
- * Owns the demo-studio session: SSE connection, chat messages, busy flag,
- * and stage state.
+ * Owns the demo-studio session: streaming chat, messages, busy flag, and stage state.
+ * Uses a single POST that returns SSE so session state stays on one serverless instance.
  */
 export function useDemoSession() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -41,9 +78,7 @@ export function useDemoSession() {
   const [recStart, setRecStart] = useState<number | null>(null);
 
   const sessionIdRef = useRef<string | null>(null);
-  const esRef = useRef<EventSource | null>(null);
 
-  /** Append to the open assistant message, or start a new one. */
   const pushAssistantPart = useCallback((part: ChatPart) => {
     setMessages((ms) => {
       const last = ms[ms.length - 1];
@@ -61,18 +96,8 @@ export function useDemoSession() {
     });
   }, []);
 
-  const connect = useCallback(async (): Promise<string> => {
-    if (sessionIdRef.current) return sessionIdRef.current;
-    const res = await fetch("/api/session", { method: "POST" });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.error ?? "could not create session");
-    const id: string = body.sessionId;
-    sessionIdRef.current = id;
-
-    const es = new EventSource(`/api/session/${id}/events`);
-    esRef.current = es;
-    es.onmessage = (e) => {
-      const ev = JSON.parse(e.data);
+  const handleEvent = useCallback(
+    (ev: SessionEvent) => {
       switch (ev.type) {
         case "agent_text":
           pushAssistantPart({ type: "text", text: ev.text });
@@ -119,11 +144,9 @@ export function useDemoSession() {
           setError(ev.message);
           break;
       }
-    };
-    return id;
-  }, [pushAssistantPart]);
-
-  useEffect(() => () => esRef.current?.close(), []);
+    },
+    [pushAssistantPart],
+  );
 
   const send = useCallback(
     async (text: string) => {
@@ -132,16 +155,25 @@ export function useDemoSession() {
       setError(null);
       setBusy(true);
       setMessages((ms) => [...ms, { id: uid("u"), role: "user", parts: [{ type: "text", text: message }] }]);
+
+      const sessionId = sessionIdRef.current ??= newSessionId();
+
       try {
-        const id = await connect();
-        const res = await fetch(`/api/session/${id}/chat`, {
+        const res = await fetch(apiUrl(`/api/session/${sessionId}`), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message }),
         });
+
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          throw new Error(body.error ?? `request failed (${res.status})`);
+          throw new Error((body as { error?: string }).error ?? `request failed (${res.status})`);
+        }
+
+        if (!res.body) throw new Error("no response stream");
+
+        for await (const ev of readSseEvents(res.body)) {
+          handleEvent(ev);
         }
       } catch (err) {
         setBusy(false);
@@ -149,7 +181,7 @@ export function useDemoSession() {
         throw err;
       }
     },
-    [busy, connect],
+    [busy, handleEvent],
   );
 
   return { messages, busy, stage, setStage, ticks, error, recStart, send };
