@@ -1,0 +1,26 @@
+{
+  "name": "demo-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chat with an agent that records browser demo videos for you — Cursor SDK + Kernel + ffmpeg",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "smoke": "node --experimental-strip-types scripts/smoke.ts"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.18",
+    "@onkernel/sdk": "^0.63.0",
+    "next": "^15.5.0",
+    "playwright-core": "^1.60.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,117 @@
+export interface DemoParams {
+  goal: string;
+  startUrl: string;
+}
+
+export interface ObservedElement {
+  i: number;
+  tag: string;
+  role: string;
+  name: string;
+  ph: string;
+  href: string;
+  dialog: boolean;
+  sel: string | null;
+  selText: string | null;
+}
+
+export interface Observation {
+  url: string;
+  title: string;
+  dialogOpen: boolean;
+  elements: ObservedElement[];
+  shot?: string; // base64 jpeg
+}
+
+export type BrowserActionName = "goto" | "click" | "type" | "hover" | "scroll" | "wait";
+
+export interface BrowserAction {
+  action: BrowserActionName;
+  targetIndex?: number;
+  url?: string;
+  text?: string;
+  dy?: number;
+  ms?: number;
+  caption?: string;
+}
+
+export interface ActionResult {
+  ok: boolean;
+  url: string;
+  error?: string;
+}
+
+/** A frame on disk plus its capture time (ms since recording start). */
+export interface FrameRef {
+  t: number;
+  file: string;
+}
+
+export interface TimedCaption {
+  t: number; // ms since recording start
+  text: string;
+}
+
+/** Replayable recipe step (compatible with the original feature-video-agent schema). */
+export interface RecipeStep {
+  action: BrowserActionName;
+  caption?: string;
+  waitAfter?: number;
+  url?: string;
+  dy?: number;
+  ms?: number;
+  text?: string;
+  delay?: number;
+  exact?: boolean;
+  selector?: string;
+  role?: string;
+  name?: string;
+  dialog?: boolean;
+}
+
+export interface Recipe {
+  name: string;
+  title: string;
+  subtitle?: string;
+  brand?: string;
+  outro?: string;
+  goal: string;
+  output: { fps: number; width: number; height: number; quality: number };
+  steps: RecipeStep[];
+}
+
+export type JobStatus = "recording" | "composing" | "done" | "error";
+
+export interface ActionLog {
+  n: number;
+  action: string;
+  caption: string;
+  ok: boolean;
+  error?: string;
+}
+
+export interface DemoJob {
+  id: string;
+  goal: string;
+  startUrl: string;
+  status: JobStatus;
+  liveViewUrl?: string;
+  actions: ActionLog[];
+  videoPath?: string;
+  durationSec?: number;
+  error?: string;
+  createdAt: number;
+}
+
+/** Everything the UI can receive over the session SSE stream. */
+export type SessionEvent =
+  | { type: "agent_text"; text: string }
+  | { type: "agent_turn_done" }
+  | { type: "tool_call"; name: string }
+  | { type: "plan"; goal: string; startUrl: string }
+  | { type: "job_created"; jobId: string; goal: string; startUrl: string }
+  | { type: "live_view"; jobId: string; url: string }
+  | { type: "action"; jobId: string; n: number; action: string; caption: string; ok: boolean; error?: string }
+  | { type: "job_status"; jobId: string; status: JobStatus }
+  | { type: "video_ready"; jobId: string; videoUrl: string; durationSec: number }
+  | { type: "error"; message: string };
