@@ -5,9 +5,12 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { getOrCreateSession } from "../src/engine/agent-session.ts";
 import type { SessionEvent } from "../src/engine/types.ts";
 import { jobDir } from "../src/engine/jobs.ts";
+import { getDemoRun } from "../src/engine/headless-run.ts";
+import { buildMcpServer } from "./mcp.ts";
 
 const PORT = Number(process.env.PORT ?? 3001);
 
@@ -53,9 +56,23 @@ function cors(origin: string | undefined): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": origin ?? "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Mcp-Session-Id, Mcp-Protocol-Version",
     Vary: "Origin",
   };
+}
+
+/** Public base URL for links returned to agents (watchUrl etc.). */
+function publicBase(req: http.IncomingMessage): string {
+  const fromEnv = (process.env.PUBLIC_URL ?? "").replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
+  const proto = (req.headers["x-forwarded-proto"] as string)?.split(",")[0] ?? "http";
+  return `${proto}://${req.headers.host ?? `localhost:${PORT}`}`;
+}
+
+function mcpAuthorized(req: http.IncomingMessage): boolean {
+  const token = process.env.MCP_AUTH_TOKEN;
+  if (!token) return true;
+  return req.headers.authorization === `Bearer ${token}`;
 }
 
 function json(res: http.ServerResponse, status: number, body: unknown, origin?: string) {
@@ -90,6 +107,66 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
 
   if (req.method === "GET" && pathname === "/health") {
     json(res, 200, { ok: true }, origin);
+    return;
+  }
+
+  // --- MCP endpoint (streamable HTTP, stateless) ---------------------------
+  if (pathname === "/mcp") {
+    if (!mcpAuthorized(req)) {
+      json(res, 401, { jsonrpc: "2.0", error: { code: -32000, message: "Unauthorized" }, id: null }, origin);
+      return;
+    }
+    if (req.method !== "POST") {
+      json(res, 405, { jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed" }, id: null }, origin);
+      return;
+    }
+    if (!process.env.CURSOR_API_KEY || !process.env.KERNEL_API_KEY) {
+      json(res, 500, { error: "CURSOR_API_KEY and KERNEL_API_KEY must be set on the server." }, origin);
+      return;
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      json(res, 400, { jsonrpc: "2.0", error: { code: -32700, message: "Parse error" }, id: null }, origin);
+      return;
+    }
+    const mcpServer = buildMcpServer(publicBase(req));
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    res.on("close", () => {
+      transport.close();
+      mcpServer.close();
+    });
+    await mcpServer.connect(transport);
+    await transport.handleRequest(req, res, body);
+    return;
+  }
+
+  // --- Run status + stable watch URL for MCP-created runs ------------------
+  const runMatch = pathname.match(/^\/api\/runs\/(run-[a-z0-9-]+)(\/video)?$/);
+  if (req.method === "GET" && runMatch) {
+    const run = getDemoRun(runMatch[1]);
+    if (!run) {
+      json(res, 404, { error: "run not found" }, origin);
+      return;
+    }
+    const wantsVideo = Boolean(runMatch[2]);
+    if (wantsVideo && run.status === "done" && run.jobId) {
+      res.writeHead(302, { Location: `/api/jobs/${run.jobId}/video${url.search}`, ...cors(origin) });
+      res.end();
+      return;
+    }
+    // Not (yet) watchable: report status. 202 = still generating, 410 = failed.
+    const status = !wantsVideo ? 200 : run.status === "error" ? 410 : 202;
+    json(res, status, {
+      runId: run.id,
+      status: run.status,
+      jobId: run.jobId,
+      liveViewUrl: run.liveViewUrl,
+      durationSec: run.durationSec,
+      error: run.error,
+      actions: run.actions,
+    }, origin);
     return;
   }
 

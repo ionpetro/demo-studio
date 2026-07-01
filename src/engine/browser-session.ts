@@ -6,15 +6,49 @@ import type { ActionResult, BrowserAction, FrameRef, Observation } from "./types
 
 const MAX_FRAMES = 4000; // ~5-6 min of screencast at ~10fps — runaway-job backstop
 
-/** Injected on every page: a synthetic cursor dot (the OS pointer isn't part of the page render). */
+// perfect-cursors ships a dependency-free CJS bundle; inline it into the page
+// init script so the synthetic cursor can spline-animate between the sparse
+// mousemove positions Playwright emits (otherwise it teleports on every click).
+// Read by explicit path — require.resolve gets rewritten to a virtual module id
+// when Next bundles this file, and this module must also run under plain Node.
+const PERFECT_CURSORS_JS = fs.readFileSync(
+  path.join(process.cwd(), "node_modules", "perfect-cursors", "dist", "cjs", "index.js"),
+  "utf8",
+);
+
+/** Injected on every page: a synthetic SVG cursor (the OS pointer isn't part of the page render). */
 const CURSOR_SCRIPT = `(() => {
   if (window.__curInit) return; window.__curInit = true;
+  const module = { exports: {} }; const exports = module.exports;
+  ${PERFECT_CURSORS_JS}
+  const PC = module.exports.PerfectCursor;
   const c = document.createElement("div");
   c.id = "__cursor";
-  c.style.cssText = "position:fixed;top:-60px;left:-60px;width:20px;height:20px;margin:-10px 0 0 -10px;border-radius:50%;background:rgba(255,40,80,.62);border:2px solid #fff;box-shadow:0 0 10px rgba(0,0,0,.7);z-index:2147483647;pointer-events:none;";
+  c.style.cssText = "position:fixed;top:-60px;left:-60px;width:28px;height:28px;margin:-3px 0 0 -3px;z-index:2147483647;pointer-events:none;filter:drop-shadow(0 1px 2px rgba(0,0,0,.55));";
+  c.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="#fff" stroke="#1a1a1a" stroke-width="1.5" stroke-linejoin="round"><path d="M9.80282 4.62973L15.8364 6.99069C19.3164 8.35243 21.0564 9.03329 20.9987 10.1133C20.941 11.1934 19.1251 11.6886 15.4933 12.6791C14.412 12.974 13.8713 13.1215 13.4964 13.4963C13.1215 13.8712 12.9741 14.4119 12.6791 15.4933C11.6887 19.125 11.1934 20.9409 10.1134 20.9986C9.03335 21.0563 8.35249 19.3163 6.99075 15.8363L4.62979 9.80276C3.20411 6.15934 2.49127 4.33764 3.41448 3.41442C4.3377 2.49121 6.15941 3.20405 9.80282 4.62973Z"></path></svg>';
   const add = () => { if (document.body && !document.getElementById("__cursor")) document.body.appendChild(c); };
   add();
-  document.addEventListener("mousemove", (e) => { add(); c.style.left = e.clientX + "px"; c.style.top = e.clientY + "px"; }, true);
+  const pc = new PC((pt) => { c.style.left = pt[0] + "px"; c.style.top = pt[1] + "px"; });
+  const ripple = (x, y) => {
+    if (!document.body) return;
+    const r = document.createElement("div");
+    r.style.cssText = "position:fixed;width:36px;height:36px;margin:-18px 0 0 -18px;border:2.5px solid rgba(255,255,255,.9);border-radius:50%;z-index:2147483646;pointer-events:none;box-shadow:0 0 6px rgba(0,0,0,.4);left:" + x + "px;top:" + y + "px";
+    document.body.appendChild(r);
+    r.animate(
+      [{ transform: "scale(.35)", opacity: 1 }, { transform: "scale(1.15)", opacity: 0 }],
+      { duration: 450, easing: "ease-out" },
+    ).onfinish = () => r.remove();
+  };
+  // The lib's rAF loop ends on the last frame before t=1 without emitting the
+  // final point, leaving the cursor slightly short — snap to it once the glide is over.
+  let settle = 0;
+  document.addEventListener("mousemove", (e) => {
+    add();
+    pc.addPoint([e.clientX, e.clientY]);
+    clearTimeout(settle);
+    settle = setTimeout(() => { c.style.left = e.clientX + "px"; c.style.top = e.clientY + "px"; }, 340);
+  }, true);
+  document.addEventListener("mousedown", (e) => { add(); ripple(e.clientX, e.clientY); }, true);
 })()`;
 
 function observeInPage() {
@@ -197,12 +231,18 @@ export class BrowserSession {
         const loc = this.target(a);
         await loc.scrollIntoViewIfNeeded({ timeout: 4_000 }).catch(() => {});
         if (a.action === "hover") await loc.hover({ timeout: 6_000 });
-        else if (a.action === "type") {
-          await loc.click({ timeout: 6_000 });
-          await loc.fill("");
-          await loc.pressSequentially(String(a.text ?? ""), { delay: 80 });
-        } else {
-          await loc.click({ timeout: 6_000 });
+        else {
+          // Move first and let the perfect-cursors glide (≤300ms) land on the
+          // target before the click fires, so the pointer visibly travels there.
+          await loc.hover({ timeout: 6_000 }).catch(() => {});
+          await sleep(380);
+          if (a.action === "type") {
+            await loc.click({ timeout: 6_000 });
+            await loc.fill("");
+            await loc.pressSequentially(String(a.text ?? ""), { delay: 80 });
+          } else {
+            await loc.click({ timeout: 6_000 });
+          }
         }
         await this.page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => {});
       }

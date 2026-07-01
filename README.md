@@ -43,3 +43,58 @@ npm run smoke -- "show the referral leaderboard and open the top referrer" https
 Outputs land in `data/jobs/<id>/` — `final.mp4`, `raw.mp4`, `recipe.json`,
 `report.json`. Recipes are deterministic and reusable: re-render a demo after a
 UI change without calling the model again.
+
+## Let your agent record demos (MCP)
+
+Demo Studio is also an MCP server, so coding agents (Claude Code, Cursor,
+Codex, …) can request demo videos themselves. The endpoint lives on the
+standalone backend at `/mcp` (streamable HTTP, stateless) and exposes two
+tools:
+
+- `create_demo_video({ goal, startUrl })` — kicks off an autonomous run
+  (the agent plans and records without a confirmation turn) and returns a
+  `runId` plus a **stable `watchUrl`** that works while the video is still
+  generating.
+- `get_demo_video({ runId })` — poll status: `planning → recording →
+  composing → done | error`, with `liveViewUrl` while recording.
+
+Stable links served by the backend:
+
+- `GET /api/runs/:runId` — JSON status (includes the action log)
+- `GET /api/runs/:runId/video` — `202` while generating, `410` on failure,
+  `302` to the MP4 once done (`?download` for attachment)
+
+Set `MCP_AUTH_TOKEN` on the server to require a `Authorization: Bearer` header
+on `/mcp`; set `PUBLIC_URL` so returned links use your public host.
+
+### Give these instructions to your agent
+
+> I'd like you to set up Demo Studio: browser demo videos recorded by agents.
+>
+> Add the MCP server: `https://demo-studio-backend.fly.dev/mcp`
+>
+> Install the `/record-demo` skill: `npx skills add ionpetro/demo-studio`
+>
+> Then try this prompt: Use Demo Studio to record a short demo video of the
+> most recent user-facing change. Pick the deployed page it affects as the
+> start URL, describe the goal in one or two sentences, and create the video.
+> Then add a comment on the PR with the watch URL.
+
+With Claude Code specifically:
+
+```bash
+claude mcp add --transport http demo-studio https://demo-studio-backend.fly.dev/mcp
+npx skills add ionpetro/demo-studio
+```
+
+The skill (`skills/record-demo/SKILL.md`) tells the agent when a video is
+worth making (PR walkthroughs, visual bugs, feature demos), when it isn't
+(logins, unfinished work, sensitive data), and to always share the stable
+watch URL.
+
+Local test without deploying:
+
+```bash
+npm run backend           # serves /mcp on :3001
+claude mcp add --transport http demo-studio http://localhost:3001/mcp
+```

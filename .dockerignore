@@ -1,0 +1,9 @@
+node_modules
+.next
+.git
+data
+.env*
+tsconfig.tsbuildinfo
+public
+scripts
+skills

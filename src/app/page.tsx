@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
-import { ClapperboardIcon, DownloadIcon, RotateCcwIcon, VideoIcon } from "lucide-react";
+import { CheckIcon, ClapperboardIcon, CopyIcon, DownloadIcon, RotateCcwIcon, VideoIcon } from "lucide-react";
 
 import {
   Conversation,
@@ -28,10 +28,10 @@ import {
 } from "@/components/ai-elements/plan";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
-import { Tool, ToolHeader } from "@/components/ai-elements/tool";
 import { WebPreview, WebPreviewBody, WebPreviewNavigation, WebPreviewUrl } from "@/components/ai-elements/web-preview";
 import { Button } from "@/components/ui/button";
 import { useDemoSession, type ChatMessage } from "@/hooks/use-demo-session";
+import { apiBase } from "@/lib/api-base";
 import { cn } from "@/lib/utils";
 
 const SUGGESTIONS = [
@@ -48,6 +48,37 @@ function fmtTimecode(ms: number): string {
   return `${mm}:${ss}:${ff}`;
 }
 
+function agentInstructions(): string {
+  const base = apiBase() || "http://localhost:3001";
+  return `I'd like you to set up Demo Studio: browser demo videos recorded by agents.
+
+Add the MCP server: ${base}/mcp
+
+Install the /record-demo skill: npx skills add ionpetro/demo-studio
+
+Then try this prompt: Use Demo Studio to record a short demo video of the most recent user-facing change. Pick the deployed page it affects as the start URL, describe the goal in one or two sentences, and create the video. Then add a comment on the PR with the watch URL.`;
+}
+
+function CopyAgentInstructions() {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="font-mono text-[10px] uppercase tracking-[0.18em]"
+      onClick={() => {
+        navigator.clipboard.writeText(agentInstructions()).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        });
+      }}
+    >
+      {copied ? <CheckIcon className="text-ok" /> : <CopyIcon />}
+      {copied ? "copied" : "copy agent instructions"}
+    </Button>
+  );
+}
+
 function ChatMessageView({ message }: { message: ChatMessage }) {
   return (
     <Message from={message.role}>
@@ -56,9 +87,13 @@ function ChatMessageView({ message }: { message: ChatMessage }) {
           part.type === "text" ? (
             <MessageResponse key={i}>{part.text}</MessageResponse>
           ) : (
-            <Tool key={part.toolCallId} className="mb-0">
-              <ToolHeader type={`tool-${part.toolName}`} state="output-available" />
-            </Tool>
+            <div
+              key={part.toolCallId}
+              className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground/70"
+            >
+              <span className="text-ok">✓</span>
+              <span>{part.toolName.replaceAll("_", " ")}</span>
+            </div>
           ),
         )}
       </MessageContent>
@@ -69,6 +104,7 @@ function ChatMessageView({ message }: { message: ChatMessage }) {
 export default function Home() {
   const { messages, busy, stage, setStage, ticks, error, recStart, send } = useDemoSession();
   const [clock, setClock] = useState(0);
+  const [input, setInput] = useState("");
 
   useEffect(() => {
     if (recStart == null) return;
@@ -80,7 +116,11 @@ export default function Home() {
   const lastMessage = messages[messages.length - 1];
   const awaitingReply = busy && lastMessage?.role === "user";
 
-  const submit = (text: string) => void send(text).catch(() => {});
+  const submit = (text: string) => {
+    if (!text.trim()) return;
+    setInput("");
+    void send(text).catch(() => {});
+  };
 
   return (
     <div className="flex h-screen">
@@ -129,7 +169,11 @@ export default function Home() {
           )}
           <PromptInput onSubmit={({ text }) => submit(text)}>
             <PromptInputBody>
-              <PromptInputTextarea placeholder="What should we record today?" />
+              <PromptInputTextarea
+                placeholder="What should we record today?"
+                value={input}
+                onChange={(e) => setInput(e.currentTarget.value)}
+              />
             </PromptInputBody>
             <PromptInputFooter>
               <PromptInputTools />
@@ -171,6 +215,12 @@ export default function Home() {
                   An agent plans your browser demo with you, drives a real cloud browser on camera,
                   and delivers a captioned MP4.
                 </p>
+                <div className="mt-2 flex flex-col items-center gap-2">
+                  <div className="font-mono text-[10px] uppercase tracking-[0.3em] text-muted-foreground/70">
+                    or let your own agent direct
+                  </div>
+                  <CopyAgentInstructions />
+                </div>
               </div>
             )}
 

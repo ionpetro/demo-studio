@@ -57,7 +57,7 @@ try {
   await session.close();
 
   console.log("▶ composing…");
-  const out = composeVideo({ frames, captions, overlays, outDir, width: 1280, height: 720, fps: 30 });
+  const out = await composeVideo({ frames, captions, overlays, outDir, width: 1280, height: 720, fps: 30 });
   console.log(`✓ ${out.finalPath} (${out.durationSec}s, ${out.frameCount} frames)`);
 } catch (err) {
   await session.close().catch(() => {});

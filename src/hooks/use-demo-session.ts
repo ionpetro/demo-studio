@@ -78,6 +78,7 @@ export function useDemoSession() {
   const [recStart, setRecStart] = useState<number | null>(null);
 
   const sessionIdRef = useRef<string | null>(null);
+  const busyRef = useRef(false);
 
   const pushAssistantPart = useCallback((part: ChatPart) => {
     setMessages((ms) => {
@@ -110,6 +111,7 @@ export function useDemoSession() {
           });
           break;
         case "agent_turn_done":
+          busyRef.current = false;
           setBusy(false);
           break;
         case "plan":
@@ -151,7 +153,8 @@ export function useDemoSession() {
   const send = useCallback(
     async (text: string) => {
       const message = text.trim();
-      if (!message || busy) return;
+      if (!message || busyRef.current) return;
+      busyRef.current = true;
       setError(null);
       setBusy(true);
       setMessages((ms) => [...ms, { id: uid("u"), role: "user", parts: [{ type: "text", text: message }] }]);
@@ -176,12 +179,13 @@ export function useDemoSession() {
           handleEvent(ev);
         }
       } catch (err) {
+        busyRef.current = false;
         setBusy(false);
         setError(err instanceof Error ? err.message : String(err));
         throw err;
       }
     },
-    [busy, handleEvent],
+    [handleEvent],
   );
 
   return { messages, busy, stage, setStage, ticks, error, recStart, send };

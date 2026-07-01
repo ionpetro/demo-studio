@@ -68,7 +68,7 @@ export class AgentSession {
   readonly id: string;
   private agent: SDKAgent | null = null;
   private emitter = new EventEmitter();
-  private buffer: SessionEvent[] = [];
+  private hasStarted = false;
   private busy = false;
 
   private params: DemoParams | null = null;
@@ -86,13 +86,13 @@ export class AgentSession {
   // --- events -------------------------------------------------------------
 
   private emit(ev: SessionEvent) {
-    this.buffer.push(ev);
-    if (this.buffer.length > 500) this.buffer.shift();
     this.emitter.emit("event", ev);
   }
 
   subscribe(onEvent: (ev: SessionEvent) => void): () => void {
-    for (const ev of this.buffer) onEvent(ev);
+    // Each message opens its own SSE stream; only forward live events for this
+    // turn. The client keeps its own chat history, so replaying past events here
+    // would re-append every prior turn's text onto the new reply.
     this.emitter.on("event", onEvent);
     return () => this.emitter.off("event", onEvent);
   }
@@ -123,7 +123,8 @@ export class AgentSession {
     this.busy = true;
     try {
       const agent = await this.ensureAgent();
-      const isFirst = this.buffer.length === 0;
+      const isFirst = !this.hasStarted;
+      this.hasStarted = true;
       const prompt = isFirst ? `${SYSTEM}\n\nUser: ${message}` : message;
       const run = await agent.send(prompt);
       for await (const event of run.stream()) {
@@ -319,7 +320,7 @@ export class AgentSession {
             await browser.close();
             this.browser = null;
 
-            const out = composeVideo({
+            const out = await composeVideo({
               frames, captions: this.captions, overlays,
               outDir: jobDir(job.id), width: OUTPUT.width, height: OUTPUT.height, fps: OUTPUT.fps,
             });
