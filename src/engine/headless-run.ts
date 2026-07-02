@@ -6,6 +6,7 @@
  * demo and poll until the video is ready.
  */
 import { getOrCreateSession } from "./agent-session.ts";
+import { loadRunRecord, persistRun } from "./db.ts";
 import type { ActionLog, SessionEvent } from "./types.ts";
 
 export type RunStatus = "planning" | "recording" | "composing" | "done" | "error";
@@ -50,6 +51,7 @@ export function startDemoRun(goal: string, startUrl: string): DemoRun {
   const session = getOrCreateSession(`sess-${id}`);
   const run: DemoRun = { id, goal, startUrl, status: "planning", actions: [], createdAt: Date.now() };
   runs.set(id, run);
+  persistRun(run);
 
   const unsubscribe = session.subscribe((ev: SessionEvent) => {
     if (ev.type === "job_created") {
@@ -67,7 +69,10 @@ export function startDemoRun(goal: string, startUrl: string): DemoRun {
       run.durationSec = ev.durationSec;
     } else if (ev.type === "error" && run.status !== "done") {
       run.error = ev.message;
+    } else {
+      return;
     }
+    persistRun(run);
   });
 
   session
@@ -81,6 +86,7 @@ export function startDemoRun(goal: string, startUrl: string): DemoRun {
         run.status = "error";
         run.error ??= "run ended without producing a video";
       }
+      persistRun(run);
     });
 
   return run;
@@ -88,4 +94,13 @@ export function startDemoRun(goal: string, startUrl: string): DemoRun {
 
 export function getDemoRun(id: string): DemoRun | undefined {
   return runs.get(id);
+}
+
+/** Like getDemoRun, but falls back to the DB for runs from a previous process. */
+export async function loadDemoRun(id: string): Promise<DemoRun | undefined> {
+  const live = runs.get(id);
+  if (live) return live;
+  const rec = await loadRunRecord(id);
+  if (!rec) return undefined;
+  return { ...rec, status: rec.status as RunStatus, actions: rec.actions as ActionLog[] };
 }

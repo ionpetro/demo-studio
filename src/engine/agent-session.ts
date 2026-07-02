@@ -6,9 +6,11 @@ import { BrowserSession, observationText } from "./browser-session.ts";
 import { getLocalAgentStore } from "./sdk-store.ts";
 import { composeVideo } from "./compose.ts";
 import { createJob, jobDir } from "./jobs.ts";
+import { persistJob, persistMessage, persistSession } from "./db.ts";
+import { uploadVideo } from "./storage.ts";
 import { apiUrl } from "../lib/api-base.ts";
 import type {
-  BrowserAction, DemoJob, DemoParams, Observation, Recipe, RecipeStep, SessionEvent, TimedCaption,
+  BrowserAction, ChatPart, DemoJob, DemoParams, Observation, Recipe, RecipeStep, SessionEvent, TimedCaption,
 } from "./types.ts";
 
 const MAX_ACTIONS = 24;
@@ -70,6 +72,7 @@ export class AgentSession {
   private emitter = new EventEmitter();
   private hasStarted = false;
   private busy = false;
+  private userId: string | undefined;
 
   private params: DemoParams | null = null;
   private job: DemoJob | null = null;
@@ -87,6 +90,18 @@ export class AgentSession {
 
   private emit(ev: SessionEvent) {
     this.emitter.emit("event", ev);
+    // Write-through: any job-affecting event snapshots the job's state to the DB.
+    if (this.job && (ev.type === "job_created" || ev.type === "action" || ev.type === "job_status" || ev.type === "video_ready")) {
+      persistJob(this.job);
+    }
+  }
+
+  /** Associate this session with the authenticated Clerk user (first writer wins). */
+  setUser(userId: string | undefined): void {
+    if (userId && this.userId !== userId) {
+      this.userId = userId;
+      persistSession(this.id, userId);
+    }
   }
 
   subscribe(onEvent: (ev: SessionEvent) => void): () => void {
@@ -121,6 +136,9 @@ export class AgentSession {
       return;
     }
     this.busy = true;
+    const assistantParts: ChatPart[] = [];
+    persistSession(this.id, this.userId);
+    persistMessage(this.id, "user", [{ type: "text", text: message }]);
     try {
       const agent = await this.ensureAgent();
       const isFirst = !this.hasStarted;
@@ -130,14 +148,28 @@ export class AgentSession {
       for await (const event of run.stream()) {
         if (event.type === "assistant") {
           for (const block of event.message.content) {
-            if (block.type === "text" && block.text) this.emit({ type: "agent_text", text: block.text });
+            if (block.type === "text" && block.text) {
+              this.emit({ type: "agent_text", text: block.text });
+              const tail = assistantParts[assistantParts.length - 1];
+              if (tail?.type === "text") tail.text += block.text;
+              else assistantParts.push({ type: "text", text: block.text });
+            }
           }
         } else if (event.type === "tool_call" && event.status === "running") {
           this.emit({ type: "tool_call", name: event.name });
+          assistantParts.push({
+            type: "tool-call",
+            toolCallId: `tc-${assistantParts.length}`,
+            toolName: event.name === "mcp" ? "studio_tool" : event.name,
+          });
         }
       }
       const result = await run.wait();
-      if (result.status === "error") this.emit({ type: "error", message: "Agent run failed." });
+      if (result.status === "error") {
+        console.error(`[session ${this.id}] agent run failed:`, JSON.stringify(result));
+        const detail = (result as any).error?.message ?? (result as any).error ?? (result as any).message;
+        this.emit({ type: "error", message: `Agent run failed${detail ? `: ${detail}` : "."}` });
+      }
     } catch (err) {
       this.emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -146,6 +178,7 @@ export class AgentSession {
       if (this.browser && this.job?.status === "recording") {
         await this.failJob("agent turn ended without finishing the demo");
       }
+      if (assistantParts.length > 0) persistMessage(this.id, "assistant", assistantParts);
       this.emit({ type: "agent_turn_done" });
     }
   }
@@ -186,7 +219,10 @@ export class AgentSession {
           if (!this.params) return { ...text("No demo params saved — call set_demo_params first."), isError: true };
           if (this.browser) return { ...text("A demo is already in progress."), isError: true };
           try {
-            this.job = createJob(this.params.goal, this.params.startUrl);
+            this.job = createJob(this.params.goal, this.params.startUrl, {
+              userId: this.userId,
+              sessionId: this.id,
+            });
             this.actionCount = 0;
             this.captions = [];
             this.steps = [{ action: "goto", url: this.params.startUrl, caption: "Open the page", waitAfter: 600 }];
@@ -342,6 +378,9 @@ export class AgentSession {
             }, null, 2));
             fs.rmSync(path.join(jobDir(job.id), "frames"), { recursive: true, force: true });
 
+            // Durable copy in Supabase Storage when configured; local disk stays the fallback.
+            job.videoUrl = await uploadVideo(job.id, out.finalPath);
+
             job.status = "done";
             job.videoPath = out.finalPath;
             job.durationSec = out.durationSec;
@@ -349,7 +388,7 @@ export class AgentSession {
             this.emit({
               type: "video_ready",
               jobId: job.id,
-              videoUrl: apiUrl(`/api/jobs/${job.id}/video`),
+              videoUrl: job.videoUrl ?? apiUrl(`/api/jobs/${job.id}/video`),
               durationSec: out.durationSec,
             });
 

@@ -95,13 +95,21 @@ export interface DemoJob {
   goal: string;
   startUrl: string;
   status: JobStatus;
+  userId?: string;
+  sessionId?: string;
   liveViewUrl?: string;
   actions: ActionLog[];
   videoPath?: string;
+  videoUrl?: string;
   durationSec?: number;
   error?: string;
   createdAt: number;
 }
+
+/** One piece of a stored chat message (mirrors the client's ChatPart shape). */
+export type ChatPart =
+  | { type: "text"; text: string }
+  | { type: "tool-call"; toolCallId: string; toolName: string };
 
 /** Everything the UI can receive over the session SSE stream. */
 export type SessionEvent =

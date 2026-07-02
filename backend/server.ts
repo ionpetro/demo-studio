@@ -5,11 +5,12 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { verifyToken } from "@clerk/backend";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { getOrCreateSession } from "../src/engine/agent-session.ts";
 import type { SessionEvent } from "../src/engine/types.ts";
 import { jobDir } from "../src/engine/jobs.ts";
-import { getDemoRun } from "../src/engine/headless-run.ts";
+import { loadDemoRun } from "../src/engine/headless-run.ts";
 import { buildMcpServer } from "./mcp.ts";
 
 const PORT = Number(process.env.PORT ?? 3001);
@@ -73,6 +74,24 @@ function mcpAuthorized(req: http.IncomingMessage): boolean {
   const token = process.env.MCP_AUTH_TOKEN;
   if (!token) return true;
   return req.headers.authorization === `Bearer ${token}`;
+}
+
+/**
+ * Resolve the Clerk user for a request. Returns the user id, undefined when
+ * Clerk isn't configured (auth disabled, e.g. bare local runs), or null for
+ * an invalid/missing token when Clerk IS configured.
+ */
+async function clerkUserId(req: http.IncomingMessage): Promise<string | undefined | null> {
+  if (!process.env.CLERK_SECRET_KEY) return undefined;
+  const header = req.headers.authorization ?? "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!token) return null;
+  try {
+    const claims = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY });
+    return claims.sub;
+  } catch {
+    return null;
+  }
 }
 
 function json(res: http.ServerResponse, status: number, body: unknown, origin?: string) {
@@ -145,7 +164,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   // --- Run status + stable watch URL for MCP-created runs ------------------
   const runMatch = pathname.match(/^\/api\/runs\/(run-[a-z0-9-]+)(\/video)?$/);
   if (req.method === "GET" && runMatch) {
-    const run = getDemoRun(runMatch[1]);
+    const run = await loadDemoRun(runMatch[1]);
     if (!run) {
       json(res, 404, { error: "run not found" }, origin);
       return;
@@ -177,7 +196,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       return;
     }
 
+    const userId = await clerkUserId(req);
+    if (userId === null) {
+      json(res, 401, { error: "sign in required" }, origin);
+      return;
+    }
+
     const session = getOrCreateSession(sessionMatch[1]);
+    session.setUser(userId);
     let message: unknown;
     try {
       message = JSON.parse(await readBody(req)).message;
