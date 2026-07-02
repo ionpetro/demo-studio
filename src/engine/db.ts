@@ -84,6 +84,7 @@ function ensureSchema(): Promise<void> {
         created_at timestamptz not null,
         updated_at timestamptz not null default now()
       );
+      alter table demo_jobs add column if not exists title text;
       create index if not exists demo_messages_session_idx on demo_messages (session_id, id);
       create index if not exists demo_sessions_user_idx on demo_sessions (user_id, created_at desc);
       create index if not exists demo_jobs_user_idx on demo_jobs (user_id, created_at desc);
@@ -135,15 +136,73 @@ export function persistMessage(sessionId: string, role: "user" | "assistant", pa
 export function persistJob(job: DemoJob): void {
   tryDb(`persistJob(${job.id})`, () =>
     getPool().query(
-      `insert into demo_jobs (id, user_id, session_id, goal, start_url, status, actions, video_url, duration_sec, error, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, to_timestamp($11 / 1000.0), now())
+      `insert into demo_jobs (id, user_id, session_id, goal, title, start_url, status, actions, video_url, duration_sec, error, created_at, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, to_timestamp($12 / 1000.0), now())
        on conflict (id) do update set
-         status = excluded.status, actions = excluded.actions, video_url = excluded.video_url,
-         duration_sec = excluded.duration_sec, error = excluded.error, updated_at = now()`,
-      [job.id, job.userId ?? null, job.sessionId ?? null, job.goal, job.startUrl, job.status,
+         status = excluded.status, title = coalesce(excluded.title, demo_jobs.title), actions = excluded.actions,
+         video_url = excluded.video_url, duration_sec = excluded.duration_sec, error = excluded.error, updated_at = now()`,
+      [job.id, job.userId ?? null, job.sessionId ?? null, job.goal, job.title ?? null, job.startUrl, job.status,
        JSON.stringify(job.actions), job.videoUrl ?? null, job.durationSec ?? null, job.error ?? null, job.createdAt],
     ),
   );
+}
+
+export interface JobRecord {
+  id: string;
+  title: string | null;
+  goal: string;
+  status: string;
+  userId: string | null;
+  videoUrl: string | null;
+  durationSec: number | null;
+  createdAt: number;
+}
+
+function rowToJobRecord(r: any): JobRecord {
+  return {
+    id: r.id,
+    title: r.title ?? null,
+    goal: r.goal,
+    status: r.status,
+    userId: r.user_id ?? null,
+    videoUrl: r.video_url ?? null,
+    durationSec: r.duration_sec ?? null,
+    createdAt: new Date(r.created_at).getTime(),
+  };
+}
+
+/** A user's finished videos, newest first. */
+export async function listUserJobs(userId: string): Promise<JobRecord[]> {
+  if (!dbEnabled()) return [];
+  try {
+    await ensureSchema();
+    const { rows } = await getPool().query(
+      `select id, title, goal, status, user_id, video_url, duration_sec, created_at
+       from demo_jobs where user_id = $1 and status = 'done' and video_url is not null
+       order by created_at desc limit 100`,
+      [userId],
+    );
+    return rows.map(rowToJobRecord);
+  } catch (err) {
+    logDbError(`listUserJobs(${userId})`, err);
+    return [];
+  }
+}
+
+/** One job by id (for the public watch page). */
+export async function loadJobRecord(id: string): Promise<JobRecord | undefined> {
+  if (!dbEnabled()) return undefined;
+  try {
+    await ensureSchema();
+    const { rows } = await getPool().query(
+      `select id, title, goal, status, user_id, video_url, duration_sec, created_at from demo_jobs where id = $1`,
+      [id],
+    );
+    return rows[0] ? rowToJobRecord(rows[0]) : undefined;
+  } catch (err) {
+    logDbError(`loadJobRecord(${id})`, err);
+    return undefined;
+  }
 }
 
 /** Fire-and-forget upsert of a run's current state. */

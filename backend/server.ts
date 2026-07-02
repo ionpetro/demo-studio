@@ -11,6 +11,8 @@ import { getOrCreateSession } from "../src/engine/agent-session.ts";
 import type { SessionEvent } from "../src/engine/types.ts";
 import { jobDir } from "../src/engine/jobs.ts";
 import { loadDemoRun } from "../src/engine/headless-run.ts";
+import { listUserJobs, loadJobRecord } from "../src/engine/db.ts";
+import { getAuthor } from "../src/engine/author.ts";
 import { buildMcpServer } from "./mcp.ts";
 
 const PORT = Number(process.env.PORT ?? 3001);
@@ -186,6 +188,30 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       error: run.error,
       actions: run.actions,
     }, origin);
+    return;
+  }
+
+  // --- Video library (signed-in user's finished videos) ---------------------
+  if (req.method === "GET" && pathname === "/api/me/videos") {
+    const userId = await clerkUserId(req);
+    if (!userId) {
+      json(res, 401, { error: "sign in required" }, origin);
+      return;
+    }
+    json(res, 200, { videos: await listUserJobs(userId) }, origin);
+    return;
+  }
+
+  // --- Public watch-page metadata (the video URL itself is already public) ---
+  const watchMatch = pathname.match(/^\/api\/videos\/(job-[a-z0-9-]+)$/);
+  if (req.method === "GET" && watchMatch) {
+    const job = await loadJobRecord(watchMatch[1]);
+    if (!job || job.status !== "done" || !job.videoUrl) {
+      json(res, 404, { error: "video not found" }, origin);
+      return;
+    }
+    const author = await getAuthor(job.userId);
+    json(res, 200, { ...job, userId: undefined, author }, origin);
     return;
   }
 

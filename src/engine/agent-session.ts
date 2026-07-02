@@ -381,6 +381,7 @@ export class AgentSession {
             // Durable copy in Supabase Storage when configured; local disk stays the fallback.
             job.videoUrl = await uploadVideo(job.id, out.finalPath);
 
+            job.title = title;
             job.status = "done";
             job.videoPath = out.finalPath;
             job.durationSec = out.durationSec;

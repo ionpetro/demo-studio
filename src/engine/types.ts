@@ -93,6 +93,7 @@ export interface ActionLog {
 export interface DemoJob {
   id: string;
   goal: string;
+  title?: string;
   startUrl: string;
   status: JobStatus;
   userId?: string;

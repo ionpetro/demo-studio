@@ -2,7 +2,8 @@
 
 import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 import { Fragment, useEffect, useState } from "react";
-import { CheckIcon, ClapperboardIcon, CopyIcon, DownloadIcon, RotateCcwIcon, VideoIcon } from "lucide-react";
+import Link from "next/link";
+import { CheckIcon, ClapperboardIcon, CopyIcon, DownloadIcon, FilmIcon, RotateCcwIcon, SquareArrowOutUpRightIcon, VideoIcon } from "lucide-react";
 
 import {
   Conversation,
@@ -144,6 +145,13 @@ export default function Home() {
               </SignUpButton>
             </Show>
             <Show when="signed-in">
+              <Link
+                href="/videos"
+                title="My videos"
+                className="text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <FilmIcon className="size-4" />
+              </Link>
               <UserButton />
             </Show>
           </div>
@@ -334,6 +342,11 @@ export default function Home() {
                   </span>
                   <span className="flex gap-2">
                     <Button asChild size="sm">
+                      <Link href={`/videos/${stage.jobId}`} target="_blank">
+                        <SquareArrowOutUpRightIcon /> watch page
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
                       <a href={`${stage.videoUrl}?download`}>
                         <DownloadIcon /> download mp4
                       </a>

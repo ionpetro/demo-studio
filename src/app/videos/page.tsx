@@ -1,0 +1,110 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useAuth } from "@clerk/nextjs";
+import { ClapperboardIcon, PlayIcon } from "lucide-react";
+
+import { Shimmer } from "@/components/ai-elements/shimmer";
+import { Button } from "@/components/ui/button";
+import { apiUrl } from "@/lib/api-base";
+import { timeAgo } from "@/lib/timeago";
+
+interface VideoItem {
+  id: string;
+  title: string | null;
+  goal: string;
+  videoUrl: string;
+  durationSec: number | null;
+  createdAt: number;
+}
+
+export default function VideosPage() {
+  const { getToken } = useAuth();
+  const [videos, setVideos] = useState<VideoItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken().catch(() => null);
+        const res = await fetch(apiUrl("/api/me/videos"), {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) throw new Error(`request failed (${res.status})`);
+        const body = (await res.json()) as { videos: VideoItem[] };
+        if (!cancelled) setVideos(body.videos);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken]);
+
+  return (
+    <div className="min-h-screen bg-[oklch(0.115_0.01_285)]">
+      <header className="flex h-14 items-center justify-between border-b px-5">
+        <Link href="/" className="font-display text-xl tracking-tight">
+          demo<span className="text-rec">·</span>studio
+        </Link>
+        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+          my videos
+        </span>
+      </header>
+
+      <main className="mx-auto max-w-6xl px-6 py-10">
+        {error && <p className="py-20 text-center font-mono text-xs text-rec">{error}</p>}
+
+        {!videos && !error && (
+          <div className="flex justify-center py-32">
+            <Shimmer className="font-mono text-xs uppercase tracking-[0.3em]">— loading —</Shimmer>
+          </div>
+        )}
+
+        {videos?.length === 0 && (
+          <div className="flex flex-col items-center gap-3 py-32 text-center">
+            <ClapperboardIcon className="size-7 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">No videos yet — direct your first take.</p>
+            <Button asChild size="sm">
+              <Link href="/">start recording</Link>
+            </Button>
+          </div>
+        )}
+
+        {videos && videos.length > 0 && (
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {videos.map((v) => (
+              <Link
+                key={v.id}
+                href={`/videos/${v.id}`}
+                className="group flex flex-col overflow-hidden rounded-xl border bg-background transition-colors hover:border-rec/50"
+              >
+                <div className="relative aspect-video bg-black">
+                  {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                  <video className="size-full object-cover" src={`${v.videoUrl}#t=0.5`} preload="metadata" muted playsInline />
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity group-hover:opacity-100">
+                    <PlayIcon className="size-9 fill-white text-white drop-shadow" />
+                  </span>
+                  {v.durationSec != null && (
+                    <span className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-white">
+                      {v.durationSec.toFixed(0)}s
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-col gap-1 p-3.5">
+                  <span className="line-clamp-2 text-sm leading-snug">{v.title ?? v.goal}</span>
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    {timeAgo(v.createdAt)}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
