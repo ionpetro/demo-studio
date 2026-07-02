@@ -26,7 +26,6 @@ Collect two things:
 Rules:
 - Ask one or two short questions at a time. Don't repeat answered questions.
 - When you have BOTH, call set_demo_params, then summarize the plan and ask the user to confirm.
-- Public pages only — never log in, sign up, pay, or change data.
 
 ## Phase 2 — record (after the user confirms)
 Call start_demo. It opens a recorded cloud browser at the start URL and returns the page observation (URL, ELEMENTS list with indexes, screenshot). The user is watching live, and EVERYTHING you do is being recorded into the final video — move deliberately, shortest clean path, no backtracking.
@@ -415,6 +414,12 @@ export class AgentSession {
     } catch {}
     this.agent = null;
   }
+
+  /** Fail any open job and release the browser/agent (used on server shutdown). */
+  async abort(reason: string): Promise<void> {
+    if (this.job) await this.failJob(reason);
+    await this.dispose();
+  }
 }
 
 // Session registry, HMR-safe.
@@ -437,4 +442,14 @@ export function getOrCreateSession(id: string): AgentSession {
     sessions.set(id, session);
   }
   return session;
+}
+
+/**
+ * Fail every open job and close every cloud browser. Called on shutdown so a
+ * deploy marks in-flight recordings as errored (visible to pollers/DB) instead
+ * of leaving zombie "recording"/"composing" rows and leaked Kernel sessions.
+ */
+export async function disposeAllSessions(reason: string): Promise<void> {
+  await Promise.allSettled([...sessions.values()].map((s) => s.abort(reason)));
+  sessions.clear();
 }

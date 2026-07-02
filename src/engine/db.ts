@@ -119,6 +119,11 @@ function tryDb(op: string, fn: () => Promise<unknown>): void {
     .catch((err) => logDbError(op, err));
 }
 
+/** Await all queued write-through operations (used before shutdown). */
+export function flushDb(): Promise<void> {
+  return writeChain.then(() => undefined);
+}
+
 export function persistSession(sessionId: string, userId: string | undefined): void {
   tryDb(`persistSession(${sessionId})`, () =>
     getPool().query(

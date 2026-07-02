@@ -97,7 +97,10 @@ function runAttempt(run: DemoRun, attempt: number): Promise<void> {
       run.status = "error";
       run.error = `run stalled — no agent activity for ${Math.round(STALL_MS / 60_000)} minutes`;
       persistRun(run);
-      void session.dispose().catch(() => {});
+      // abort (not dispose): fails the open job so demo_jobs doesn't keep a
+      // zombie "recording" row — dispose alone also disarms handleMessage's
+      // fallback failJob guard by nulling the browser first.
+      void session.abort(run.error).catch(() => {});
     }
   }, 30_000);
 
@@ -137,6 +140,21 @@ function runAttempt(run: DemoRun, attempt: number): Promise<void> {
 
 export function getDemoRun(id: string): DemoRun | undefined {
   return runs.get(id);
+}
+
+/**
+ * Mark every non-terminal run as errored (called on server shutdown).
+ * Covers runs abort() can't reach — e.g. still in "planning" with no job yet —
+ * so pollers get a definitive error instead of 202 forever.
+ */
+export function failAllActiveRuns(reason: string): void {
+  for (const run of runs.values()) {
+    if (run.status !== "done" && run.status !== "error") {
+      run.status = "error";
+      run.error ??= reason;
+      persistRun(run);
+    }
+  }
 }
 
 /** Like getDemoRun, but falls back to the DB for runs from a previous process. */

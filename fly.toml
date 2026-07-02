@@ -1,5 +1,7 @@
 app = "demo-studio-backend"
 primary_region = "sjc"
+# Give the shutdown handler time to fail open jobs and close cloud browsers.
+kill_timeout = "30s"
 
 [build]
   dockerfile = "backend/Dockerfile"

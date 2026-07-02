@@ -7,10 +7,11 @@ import http from "node:http";
 import path from "node:path";
 import { verifyToken } from "@clerk/backend";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { getOrCreateSession } from "../src/engine/agent-session.ts";
+import { disposeAllSessions, getOrCreateSession } from "../src/engine/agent-session.ts";
+import { flushDb } from "../src/engine/db.ts";
 import type { SessionEvent } from "../src/engine/types.ts";
 import { jobDir } from "../src/engine/jobs.ts";
-import { loadDemoRun } from "../src/engine/headless-run.ts";
+import { failAllActiveRuns, loadDemoRun } from "../src/engine/headless-run.ts";
 import { listUserJobs, loadJobRecord } from "../src/engine/db.ts";
 import { getAuthor } from "../src/engine/author.ts";
 import { buildMcpServer } from "./mcp.ts";
@@ -325,3 +326,25 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`demo-studio backend listening on :${PORT}`);
 });
+
+// Graceful shutdown: a deploy/restart must fail open jobs (persisted to the
+// DB) and close cloud browsers instead of leaving zombie "recording" rows.
+let shuttingDown = false;
+async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} — failing open jobs and closing browsers before exit`);
+  const deadline = setTimeout(() => process.exit(1), 20_000);
+  try {
+    await disposeAllSessions("backend restarted mid-recording (deploy) — please run the demo again");
+    // Synchronous: enqueues its persists before flushDb snapshots the chain.
+    failAllActiveRuns("backend restarted mid-run (deploy) — submit the demo again");
+    await flushDb();
+  } finally {
+    clearTimeout(deadline);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 1_000).unref();
+  }
+}
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));

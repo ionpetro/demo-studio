@@ -36,9 +36,11 @@ export function buildMcpServer(baseUrl: string): McpServer {
       title: "Create demo video",
       description:
         "Record a short browser demo video. An agent drives a real cloud browser through the goal on a live " +
-        "public web page, captures every frame, and composes a captioned, branded MP4. Returns immediately " +
+        "web page, captures every frame, and composes a captioned, branded MP4. Returns immediately " +
         "with a runId and a stable watchUrl; generation takes a few minutes — poll get_demo_video until " +
-        "status is 'done'. Public pages only: the agent never logs in, signs up, pays, or changes data.",
+        "status is 'done'. CAUTION: the agent will follow the goal literally, including logging in or " +
+        "submitting forms, and finished videos are PUBLIC at the watchUrl — never include credentials or " +
+        "goals that pay for anything or destroy data.",
       inputSchema: {
         goal: z.string().min(1).describe("What the video should demonstrate, in one or two sentences."),
         startUrl: z.string().url().describe("Full https:// URL of the page where the demo starts."),
