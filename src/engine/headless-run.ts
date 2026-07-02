@@ -47,11 +47,40 @@ export function startDemoRun(goal: string, startUrl: string): DemoRun {
   }
 
   const id = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-  // One session per run; the sess- prefix keeps it valid for the session API.
-  const session = getOrCreateSession(`sess-${id}`);
   const run: DemoRun = { id, goal, startUrl, status: "planning", actions: [], createdAt: Date.now() };
   runs.set(id, run);
   persistRun(run);
+  void executeRun(run);
+  return run;
+}
+
+async function executeRun(run: DemoRun) {
+  // The Cursor API occasionally kills a run instantly ("Agent ... not found",
+  // sub-second failures observed in prod). Those die before any browser work,
+  // so retrying once on a fresh session is cheap and safe. Never retry once
+  // recording started — that would burn a whole take.
+  const MAX_ATTEMPTS = 2;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    await runAttempt(run, attempt);
+    if (run.status === "done") return;
+    if (run.jobId || run.actions.length) break;
+    if (attempt < MAX_ATTEMPTS) {
+      console.warn(`[run ${run.id}] attempt ${attempt} failed before recording (${run.error ?? "no detail"}) — retrying`);
+      run.status = "planning";
+      run.error = undefined;
+      persistRun(run);
+    }
+  }
+  if ((run.status as RunStatus) !== "done") {
+    run.status = "error";
+    run.error ??= "run ended without producing a video";
+  }
+  persistRun(run);
+}
+
+function runAttempt(run: DemoRun, attempt: number): Promise<void> {
+  // Fresh session per attempt; the sess- prefix keeps it valid for the session API.
+  const session = getOrCreateSession(`sess-${run.id}-a${attempt}`);
 
   // Watchdog: an agent stream can hang mid-run (observed in prod), leaving the
   // run stuck in "recording" with a live cloud browser leaking. If no event
@@ -95,22 +124,15 @@ export function startDemoRun(goal: string, startUrl: string): DemoRun {
     persistRun(run);
   });
 
-  session
-    .handleMessage(autonomousPrompt(goal, startUrl))
+  return session
+    .handleMessage(autonomousPrompt(run.goal, run.startUrl))
     .catch((err) => {
       run.error = err instanceof Error ? err.message : String(err);
     })
     .finally(() => {
       clearInterval(watchdog);
       unsubscribe();
-      if (run.status !== "done") {
-        run.status = "error";
-        run.error ??= "run ended without producing a video";
-      }
-      persistRun(run);
     });
-
-  return run;
 }
 
 export function getDemoRun(id: string): DemoRun | undefined {

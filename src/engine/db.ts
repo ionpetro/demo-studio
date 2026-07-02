@@ -104,10 +104,17 @@ function logDbError(op: string, err: unknown) {
   console.error(`[db] ${op} failed:`, err instanceof Error ? err.message : err);
 }
 
-/** Fire-and-forget wrapper: ensure schema, run op, log-and-swallow failures. */
+/**
+ * Fire-and-forget wrapper: ensure schema, run op, log-and-swallow failures.
+ * Writes are chained so they hit the DB in call order — concurrent inserts on
+ * separate pool connections raced (persistMessage landing before its
+ * persistSession → FK violation, seen in prod).
+ */
+let writeChain: Promise<unknown> = Promise.resolve();
 function tryDb(op: string, fn: () => Promise<unknown>): void {
   if (!dbEnabled()) return;
-  ensureSchema()
+  writeChain = writeChain
+    .then(() => ensureSchema())
     .then(fn)
     .catch((err) => logDbError(op, err));
 }

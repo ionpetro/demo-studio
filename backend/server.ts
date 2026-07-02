@@ -261,8 +261,22 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       }
     };
 
+    // Comment-line heartbeat: composing (ffmpeg + storage upload) can go
+    // minutes without events, and idle streams get cut by proxies — which the
+    // UI surfaced as "network error" right at the developing-film moment.
+    const keepalive = setInterval(() => {
+      try {
+        res.write(": keepalive\n\n");
+      } catch {
+        cleanup();
+      }
+    }, 20_000);
+
     const unsubscribe = session.subscribe(send);
-    const cleanup = () => unsubscribe();
+    const cleanup = () => {
+      clearInterval(keepalive);
+      unsubscribe();
+    };
 
     try {
       await session.handleMessage(message.trim());

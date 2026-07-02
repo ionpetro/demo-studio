@@ -57,10 +57,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         }
       };
 
+      // Heartbeat so long silent stretches (ffmpeg compose) don't get the
+      // stream culled as idle by proxies.
+      const keepalive = setInterval(() => {
+        try {
+          controller.enqueue(new TextEncoder().encode(": keepalive\n\n"));
+        } catch {
+          /* client disconnected */
+        }
+      }, 20_000);
+
       const unsubscribe = session.subscribe(send);
       try {
         await session.handleMessage(message.trim());
       } finally {
+        clearInterval(keepalive);
         unsubscribe();
         try {
           controller.close();

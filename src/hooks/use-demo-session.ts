@@ -80,7 +80,32 @@ export function useDemoSession() {
 
   const sessionIdRef = useRef<string | null>(null);
   const busyRef = useRef(false);
+  const liveJobRef = useRef<string | null>(null);
   const { getToken } = useAuth();
+
+  /**
+   * The stream died mid-job but the backend keeps recording/composing —
+   * poll the watch endpoint until the video lands (or ~4 min pass).
+   */
+  const recoverJob = useCallback(async (jobId: string): Promise<boolean> => {
+    for (let i = 0; i < 48; i++) {
+      await new Promise((r) => setTimeout(r, 5000));
+      try {
+        const res = await fetch(apiUrl(`/api/videos/${jobId}`));
+        if (res.ok) {
+          const v = (await res.json()) as { videoUrl: string; durationSec: number | null };
+          liveJobRef.current = null;
+          setRecStart(null);
+          setError(null);
+          setStage({ mode: "done", jobId, videoUrl: v.videoUrl, durationSec: v.durationSec ?? 0 });
+          return true;
+        }
+      } catch {
+        /* transient — keep polling */
+      }
+    }
+    return false;
+  }, []);
 
   const pushAssistantPart = useCallback((part: ChatPart) => {
     setMessages((ms) => {
@@ -122,6 +147,7 @@ export function useDemoSession() {
         case "job_created":
           setTicks([]);
           setError(null);
+          liveJobRef.current = ev.jobId;
           setStage({ mode: "live", jobId: ev.jobId, composing: false });
           setRecStart(Date.now());
           break;
@@ -136,11 +162,13 @@ export function useDemoSession() {
             setRecStart(null);
             setStage((s) => (s.mode === "live" ? { ...s, composing: true } : s));
           } else if (ev.status === "error") {
+            liveJobRef.current = null;
             setRecStart(null);
             setStage({ mode: "idle" });
           }
           break;
         case "video_ready":
+          liveJobRef.current = null;
           setRecStart(null);
           setStage({ mode: "done", jobId: ev.jobId, videoUrl: ev.videoUrl, durationSec: ev.durationSec });
           break;
@@ -187,11 +215,16 @@ export function useDemoSession() {
       } catch (err) {
         busyRef.current = false;
         setBusy(false);
+        const jobId = liveJobRef.current;
+        if (jobId) {
+          setError("connection dropped — waiting for the studio to finish the cut…");
+          if (await recoverJob(jobId)) return;
+        }
         setError(err instanceof Error ? err.message : String(err));
         throw err;
       }
     },
-    [handleEvent, getToken],
+    [handleEvent, getToken, recoverJob],
   );
 
   return { messages, busy, stage, setStage, ticks, error, recStart, send };

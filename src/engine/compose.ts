@@ -10,8 +10,15 @@ const execFileAsync = promisify(execFile);
 
 // Async so a long encode never blocks the server's event loop; the timeout
 // keeps a hung ffmpeg from wedging the job forever.
-const ff = (args: string[], cwd: string) =>
-  execFileAsync("ffmpeg", ["-y", "-loglevel", "error", ...args], { cwd, timeout: 10 * 60_000 });
+const ff = async (args: string[], cwd: string) => {
+  try {
+    await execFileAsync("ffmpeg", ["-y", "-loglevel", "error", ...args], { cwd, timeout: 10 * 60_000 });
+  } catch (err) {
+    // exec errors only carry the command line; the actual cause is on stderr.
+    const stderr = (err as { stderr?: string }).stderr?.trim().slice(-500);
+    throw new Error(`${err instanceof Error ? err.message : err}${stderr ? `\nffmpeg stderr: ${stderr}` : ""}`);
+  }
+};
 
 /**
  * Full-frame backdrop the (padded, rounded) recording is composited onto.
@@ -109,7 +116,7 @@ export async function composeVideo(input: ComposeInput): Promise<ComposeResult> 
     cur = lbl;
   });
   fc += `;[${cur}]format=yuv420p[v]`;
-  await ff([...inputs, "-filter_complex", fc, "-map", "[v]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "main.mp4"], tmp);
+  await ff([...inputs, "-filter_complex", fc, "-map", "[v]", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "main.mp4"], tmp);
 
   const finalPath = path.join(outDir, "final.mp4");
   const rawPath = path.join(outDir, "raw.mp4");
