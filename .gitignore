@@ -10,3 +10,4 @@ next-env.d.ts
 # generated recordings & recipes
 data/
 .vercel
+.claude/worktrees/
