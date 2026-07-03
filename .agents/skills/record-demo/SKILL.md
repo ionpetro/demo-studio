@@ -38,8 +38,12 @@ recorded walkthrough of a live page is clearer than another chat message.
 1. Call `create_demo_video` with:
    - `goal` — one or two sentences describing what the video should show.
    - `startUrl` — the full https:// URL of the page where the demo starts.
-2. It returns immediately with a `runId` and a stable `watchUrl`. Share the
-   `watchUrl` right away — it works while the video is still generating.
+2. It returns immediately with a `runId` and a stable `watchUrl`. Check the
+   `shareable` flag: when `true`, share the `watchUrl` right away — it works
+   while the video is still generating. When `false` (a local backend without
+   a public URL), the link only resolves on that machine — never paste it into
+   PRs, issues, or chat; wait for `done` and use the link `get_demo_video`
+   returns then, which is durable when it is marked `shareable`.
 3. Generation takes a few minutes. Poll `get_demo_video` with the `runId`
    roughly every 30 seconds until `status` is `done` (or `error`).
 4. While recording, `liveViewUrl` lets a human watch the browser live.
@@ -48,6 +52,8 @@ recorded walkthrough of a live page is clearer than another chat message.
 
 After using Demo Studio, respond with:
 
-- the `watchUrl` (stable even while the video is generating)
+- the `watchUrl`, but only post it outside the chat (PRs, issues, messages)
+  when the response marks it `shareable: true`; otherwise say the link is
+  local-only and where a shareable one will come from
 - a one-sentence description of what the video covers
 - if the run errored, say so plainly and include the error message

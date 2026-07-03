@@ -58,14 +58,25 @@ tools:
 - `get_demo_video({ runId })` — poll status: `planning → recording →
   composing → done | error`, with `liveViewUrl` while recording.
 
+Both tools include a `shareable` flag on every response: `true` only when the
+`watchUrl` opens from other machines. A backend without `PUBLIC_URL` builds
+links from the request host — `localhost` for a local MCP client — and marks
+them `shareable: false` so agents don't paste dead links into PRs or chat.
+Once a run is `done` and Supabase storage is configured, `watchUrl` switches
+to the durable public MP4, which stays up after the backend shuts down.
+
 Stable links served by the backend:
 
 - `GET /api/runs/:runId` — JSON status (includes the action log)
 - `GET /api/runs/:runId/video` — `202` while generating, `410` on failure,
-  `302` to the MP4 once done (`?download` for attachment)
+  `302` once done (`?download` for attachment) — to the Supabase storage copy
+  when configured, else to the local file
 
 Set `MCP_AUTH_TOKEN` on the server to require a `Authorization: Bearer` header
-on `/mcp`; set `PUBLIC_URL` so returned links use your public host.
+on `/mcp`. Set `PUBLIC_URL` (see `.env.example`) so returned links use your
+public host — without it, links are local-only and flagged as such. Set
+`SUPABASE_URL` + `SUPABASE_SECRET_KEY` so finished videos are uploaded to a
+public storage bucket instead of living solely on the recording machine's disk.
 
 ### Give these instructions to your agent
 
@@ -89,8 +100,8 @@ npx skills add ionpetro/demo-studio
 
 The skill (`skills/record-demo/SKILL.md`) tells the agent when a video is
 worth making (PR walkthroughs, visual bugs, feature demos), when it isn't
-(logins, unfinished work, sensitive data), and to always share the stable
-watch URL.
+(logins, unfinished work, sensitive data), and to only share the watch URL
+when the server marks it `shareable`.
 
 Local test without deploying:
 
@@ -98,3 +109,7 @@ Local test without deploying:
 npm run backend           # serves /mcp on :3001
 claude mcp add --transport http demo-studio http://localhost:3001/mcp
 ```
+
+Local runs hand out `localhost` links flagged `shareable: false`; once a run
+finishes with Supabase storage configured, `get_demo_video` returns the
+durable public URL instead.
