@@ -1,0 +1,21 @@
+#!/usr/bin/env node
+// Wraps the real ffmpeg binary and logs [start, end] timestamps around each
+// invocation to FFMPEG_TRACKER_LOG, so tests can assert on real subprocess
+// concurrency (or lack thereof) without touching compose.ts's internals.
+// Deliberately CommonJS (no extension => Node defaults to CJS) to avoid any
+// ESM module-resolution ambiguity when invoked as a bare PATH executable.
+const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
+
+const log = process.env.FFMPEG_TRACKER_LOG;
+const real = process.env.REAL_FFMPEG_PATH;
+if (!real) {
+  console.error("REAL_FFMPEG_PATH not set");
+  process.exit(1);
+}
+const args = process.argv.slice(2);
+
+if (log) fs.appendFileSync(log, `start ${process.pid} ${Date.now()}\n`);
+const res = spawnSync(real, args, { stdio: "inherit" });
+if (log) fs.appendFileSync(log, `end ${process.pid} ${Date.now()}\n`);
+process.exit(res.status ?? 1);
