@@ -28,7 +28,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   if (!SESSION_ID.test(id)) return jsonError("invalid session id", 400);
 
-  let body: { message?: unknown };
+  let body: { message?: unknown; model?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -46,6 +46,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const session = getOrCreateSession(id);
   session.setUser(userId);
   if (session.isBusy) return jsonError("agent is busy", 409);
+  if (typeof body.model === "string" && /^[a-z0-9.-]{1,40}$/.test(body.model)) {
+    session.setModel(body.model);
+  }
 
   const stream = new ReadableStream({
     async start(controller) {

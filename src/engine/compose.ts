@@ -1,24 +1,45 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import type { Overlays } from "./browser-session.ts";
 import type { FrameRef, TimedCaption } from "./types.ts";
 
-const execFileAsync = promisify(execFile);
-
-// Async so a long encode never blocks the server's event loop; the timeout
-// keeps a hung ffmpeg from wedging the job forever.
-const ff = async (args: string[], cwd: string) => {
-  try {
-    await execFileAsync("ffmpeg", ["-y", "-loglevel", "error", ...args], { cwd, timeout: 10 * 60_000 });
-  } catch (err) {
-    // exec errors only carry the command line; the actual cause is on stderr.
-    const stderr = (err as { stderr?: string }).stderr?.trim().slice(-500);
-    throw new Error(`${err instanceof Error ? err.message : err}${stderr ? `\nffmpeg stderr: ${stderr}` : ""}`);
-  }
-};
+/**
+ * Run ffmpeg without blocking the event loop; the timeout keeps a hung encode
+ * from wedging the job forever. With `onTime`, ffmpeg's `-progress` stream is
+ * parsed and the callback receives output seconds encoded so far.
+ */
+const ff = (args: string[], cwd: string, onTime?: (sec: number) => void) =>
+  new Promise<void>((resolve, reject) => {
+    const progressArgs = onTime ? ["-progress", "pipe:1", "-nostats"] : [];
+    const proc = spawn("ffmpeg", ["-y", "-loglevel", "error", ...progressArgs, ...args], { cwd });
+    let stderr = "";
+    proc.stderr.on("data", (d) => {
+      stderr = (stderr + d).slice(-2000);
+    });
+    let buf = "";
+    proc.stdout.on("data", (d) => {
+      buf += d;
+      let nl;
+      while ((nl = buf.indexOf("\n")) !== -1) {
+        const m = buf.slice(0, nl).match(/^out_time_us=(\d+)/);
+        buf = buf.slice(nl + 1);
+        if (m && onTime) onTime(Number(m[1]) / 1e6);
+      }
+    });
+    const timer = setTimeout(() => proc.kill("SIGKILL"), 10 * 60_000);
+    proc.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve();
+      // exit codes alone are useless; the actual cause is on stderr.
+      else reject(new Error(`ffmpeg exited with ${code}${stderr ? `\nffmpeg stderr: ${stderr.trim().slice(-500)}` : ""}`));
+    });
+  });
 
 /**
  * Full-frame backdrop the (padded, rounded) recording is composited onto.
@@ -35,6 +56,8 @@ export interface ComposeInput {
   width: number;
   height: number;
   fps: number;
+  /** Encode progress, 0..1 (based on ffmpeg's -progress out_time). */
+  onProgress?: (pct: number) => void;
 }
 
 export interface ComposeResult {
@@ -116,7 +139,13 @@ export async function composeVideo(input: ComposeInput): Promise<ComposeResult> 
     cur = lbl;
   });
   fc += `;[${cur}]format=yuv420p[v]`;
-  await ff([...inputs, "-filter_complex", fc, "-map", "[v]", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "main.mp4"], tmp);
+  const onTime = input.onProgress
+    ? (sec: number) => input.onProgress!(Math.max(0, Math.min(1, sec / total)))
+    : undefined;
+  // +faststart moves the moov index to the front so browsers can start
+  // playback (and grid thumbnails can show metadata) without downloading the
+  // whole file first.
+  await ff([...inputs, "-filter_complex", fc, "-map", "[v]", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-movflags", "+faststart", "main.mp4"], tmp, onTime);
 
   const finalPath = path.join(outDir, "final.mp4");
   const rawPath = path.join(outDir, "raw.mp4");

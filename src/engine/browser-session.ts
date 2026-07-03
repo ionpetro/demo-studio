@@ -111,16 +111,11 @@ export interface OverlaySpec {
   H: number;
   captions: string[];
   brand: string;
-  title: string;
-  subtitle: string;
-  outro: string;
 }
 
 export interface Overlays {
   caps: string[]; // base64 PNGs
   brand: string | null;
-  intro: string;
-  outro: string;
 }
 
 /**
@@ -253,7 +248,7 @@ export class BrowserSession {
     }
   }
 
-  /** Render caption/brand/intro/outro cards as transparent PNGs using the (now idle) page. */
+  /** Render caption/brand cards as transparent PNGs using the (now idle) page. */
   async renderOverlays(spec: OverlaySpec): Promise<Overlays> {
     const hesc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     await this.page.setViewportSize({ width: spec.W, height: spec.H }).catch(() => {});
@@ -280,14 +275,7 @@ export class BrowserSession {
     const brand = spec.brand
       ? await shot(`<div id='x' style="color:rgba(255,255,255,.85);font-size:24px;font-weight:800;letter-spacing:1.5px">${hesc(spec.brand)}</div>`)
       : null;
-    const cardCss = `width:${spec.W}px;height:${spec.H}px;background:linear-gradient(135deg,#0b0b12,#16161f);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px`;
-    const intro = await shot(
-      `<div id='x' style="${cardCss}"><div style='font-size:58px;font-weight:800;color:#fff;text-align:center;padding:0 60px'>${hesc(spec.title)}</div><div style='font-size:26px;font-weight:600;letter-spacing:1.5px;color:#ff2850'>${hesc(spec.subtitle)}</div></div>`,
-    );
-    const outro = await shot(
-      `<div id='x' style="${cardCss}"><div style='font-size:50px;font-weight:800;color:#fff'>${hesc(spec.outro)}</div></div>`,
-    );
-    return { caps, brand, intro, outro };
+    return { caps, brand };
   }
 
   async close(): Promise<void> {

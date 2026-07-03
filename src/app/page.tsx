@@ -16,6 +16,11 @@ import {
   PromptInput,
   PromptInputBody,
   PromptInputFooter,
+  PromptInputSelect,
+  PromptInputSelectContent,
+  PromptInputSelectItem,
+  PromptInputSelectTrigger,
+  PromptInputSelectValue,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
@@ -103,8 +108,20 @@ function ChatMessageView({ message }: { message: ChatMessage }) {
   );
 }
 
+const COMPOSE_STAGES = ["processing frames", "printing captions", "encoding cut", "uploading to storage"];
+
+/** Curated slice of the Cursor model catalog (all billed via CURSOR_API_KEY). */
+const MODELS = [
+  { id: "composer-2.5", label: "Composer 2.5" },
+  { id: "gpt-5.5", label: "GPT-5.5" },
+  { id: "claude-sonnet-5", label: "Sonnet 5" },
+  { id: "claude-opus-4-8", label: "Opus 4.8" },
+  { id: "gemini-3.1-pro", label: "Gemini 3.1 Pro" },
+  { id: "gpt-5.4-mini", label: "GPT-5.4 Mini" },
+];
+
 export default function Home() {
-  const { messages, busy, stage, setStage, ticks, error, recStart, send } = useDemoSession();
+  const { messages, busy, stage, setStage, ticks, compose, error, recStart, send, model, setModel } = useDemoSession();
   const [clock, setClock] = useState(0);
   const [input, setInput] = useState("");
 
@@ -198,7 +215,20 @@ export default function Home() {
               />
             </PromptInputBody>
             <PromptInputFooter>
-              <PromptInputTools />
+              <PromptInputTools>
+                <PromptInputSelect value={model} onValueChange={setModel}>
+                  <PromptInputSelectTrigger className="h-7 gap-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    <PromptInputSelectValue placeholder="model" />
+                  </PromptInputSelectTrigger>
+                  <PromptInputSelectContent>
+                    {MODELS.map((m) => (
+                      <PromptInputSelectItem key={m.id} value={m.id}>
+                        {m.label}
+                      </PromptInputSelectItem>
+                    ))}
+                  </PromptInputSelectContent>
+                </PromptInputSelect>
+              </PromptInputTools>
               <PromptInputSubmit disabled={busy} status={busy ? "submitted" : "ready"} />
             </PromptInputFooter>
           </PromptInput>
@@ -268,7 +298,7 @@ export default function Home() {
                     </div>
                     <div className="flex justify-between gap-6 border-t pt-2">
                       <span className="uppercase tracking-widest text-muted-foreground">output</span>
-                      <span>1280×720 MP4 · captions · intro/outro</span>
+                      <span>1280×720 MP4 · captions</span>
                     </div>
                   </PlanContent>
                   <PlanFooter>
@@ -321,11 +351,51 @@ export default function Home() {
                 )}
 
                 {stage.composing && (
-                  <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-5 bg-background/90 backdrop-blur">
+                  <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-6 bg-background/90 backdrop-blur">
                     <div className="spool" />
                     <Shimmer className="font-mono text-xs uppercase tracking-[0.3em]">
-                      developing film · ffmpeg
+                      developing film
                     </Shimmer>
+                    <div className="flex w-64 flex-col gap-2 font-mono text-[11px]">
+                      {COMPOSE_STAGES.map((s) => {
+                        const idx = COMPOSE_STAGES.indexOf(compose?.stage ?? "");
+                        const mine = COMPOSE_STAGES.indexOf(s);
+                        const state = idx < 0 ? "pending" : mine < idx ? "done" : mine === idx ? "active" : "pending";
+                        return (
+                          <div key={s} className="flex flex-col gap-1.5">
+                            <div
+                              className={cn(
+                                "flex items-center gap-2.5 uppercase tracking-widest transition-colors",
+                                state === "done" && "text-muted-foreground",
+                                state === "active" && "text-foreground",
+                                state === "pending" && "text-muted-foreground/40",
+                              )}
+                            >
+                              <span className={cn("w-3 text-center", state === "done" && "text-ok")}>
+                                {state === "done" ? "✓" : state === "active" ? "●" : "·"}
+                              </span>
+                              <span className={cn(state === "active" && "animate-pulse")}>{s}</span>
+                              {state === "active" && compose?.pct != null && (
+                                <span className="ml-auto tabular-nums text-amber">
+                                  {Math.round(compose.pct * 100)}%
+                                </span>
+                              )}
+                            </div>
+                            {state === "active" && compose?.pct != null && (
+                              <div className="ml-5.5 h-1 overflow-hidden rounded-full bg-muted">
+                                <div
+                                  className="h-full rounded-full bg-rec transition-[width] duration-500"
+                                  style={{ width: `${Math.round(compose.pct * 100)}%` }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="max-w-xs text-center text-xs text-muted-foreground">
+                      Your take is safe — the cut lands here and in your library when it&apos;s done.
+                    </p>
                   </div>
                 )}
               </Fragment>

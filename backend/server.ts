@@ -174,7 +174,13 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     }
     const wantsVideo = Boolean(runMatch[2]);
     if (wantsVideo && run.status === "done" && run.jobId) {
-      res.writeHead(302, { Location: `/api/jobs/${run.jobId}/video${url.search}`, ...cors(origin) });
+      // Prefer the durable storage copy — the local file only exists on the
+      // machine that recorded the job (and only while that process's disk lives).
+      const stored = (await loadJobRecord(run.jobId))?.videoUrl;
+      const location = stored
+        ? url.searchParams.has("download") ? `${stored}?download=${run.jobId}.mp4` : stored
+        : `/api/jobs/${run.jobId}/video${url.search}`;
+      res.writeHead(302, { Location: location, ...cors(origin) });
       res.end();
       return;
     }
@@ -232,11 +238,17 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     const session = getOrCreateSession(sessionMatch[1]);
     session.setUser(userId);
     let message: unknown;
+    let model: unknown;
     try {
-      message = JSON.parse(await readBody(req)).message;
+      const body = JSON.parse(await readBody(req));
+      message = body.message;
+      model = body.model;
     } catch {
       json(res, 400, { error: "invalid json" }, origin);
       return;
+    }
+    if (typeof model === "string" && /^[a-z0-9.-]{1,40}$/.test(model)) {
+      session.setModel(model);
     }
     if (typeof message !== "string" || !message.trim()) {
       json(res, 400, { error: "message required" }, origin);
@@ -292,13 +304,21 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
   if (req.method === "GET" && videoMatch) {
     const id = videoMatch[1];
     const file = path.join(jobDir(id), "final.mp4");
+    const download = url.searchParams.has("download");
     if (!fs.existsSync(file)) {
+      // Recorded on another machine (or the disk was wiped): fall back to the
+      // durable storage copy so the stable link works from any instance.
+      const stored = (await loadJobRecord(id))?.videoUrl;
+      if (stored) {
+        res.writeHead(302, { Location: download ? `${stored}?download=${id}.mp4` : stored, ...cors(origin) });
+        res.end();
+        return;
+      }
       res.writeHead(404, cors(origin));
       res.end("video not found");
       return;
     }
     const stat = fs.statSync(file);
-    const download = url.searchParams.has("download");
 
     const headers: Record<string, string> = {
       "Content-Type": "video/mp4",

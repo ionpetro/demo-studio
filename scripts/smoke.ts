@@ -49,9 +49,6 @@ try {
     W: 1280, H: 720,
     captions: captions.map((c) => c.text),
     brand: "SMOKE TEST",
-    title: "Engine Smoke Test",
-    subtitle: "DEMO STUDIO",
-    outro: "demo.studio",
   });
 
   await session.close();

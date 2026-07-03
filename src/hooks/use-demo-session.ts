@@ -27,6 +27,11 @@ export interface Tick {
   ok: boolean;
 }
 
+export interface ComposeProgress {
+  stage: string;
+  pct?: number;
+}
+
 type SessionEvent =
   | { type: "agent_text"; text: string }
   | { type: "agent_turn_done" }
@@ -36,6 +41,7 @@ type SessionEvent =
   | { type: "live_view"; url: string }
   | { type: "action"; n: number; action: string; caption: string; ok: boolean }
   | { type: "job_status"; status: string }
+  | { type: "compose_progress"; stage: string; pct?: number }
   | { type: "video_ready"; jobId: string; videoUrl: string; durationSec: number }
   | { type: "error"; message: string };
 
@@ -75,8 +81,10 @@ export function useDemoSession() {
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<StageState>({ mode: "idle" });
   const [ticks, setTicks] = useState<Tick[]>([]);
+  const [compose, setCompose] = useState<ComposeProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recStart, setRecStart] = useState<number | null>(null);
+  const [model, setModel] = useState("composer-2.5");
 
   const sessionIdRef = useRef<string | null>(null);
   const busyRef = useRef(false);
@@ -131,11 +139,7 @@ export function useDemoSession() {
           pushAssistantPart({ type: "text", text: ev.text });
           break;
         case "tool_call":
-          pushAssistantPart({
-            type: "tool-call",
-            toolCallId: uid("tc"),
-            toolName: ev.name === "mcp" ? "studio_tool" : ev.name,
-          });
+          pushAssistantPart({ type: "tool-call", toolCallId: uid("tc"), toolName: ev.name });
           break;
         case "agent_turn_done":
           busyRef.current = false;
@@ -146,6 +150,7 @@ export function useDemoSession() {
           break;
         case "job_created":
           setTicks([]);
+          setCompose(null);
           setError(null);
           liveJobRef.current = ev.jobId;
           setStage({ mode: "live", jobId: ev.jobId, composing: false });
@@ -164,12 +169,17 @@ export function useDemoSession() {
           } else if (ev.status === "error") {
             liveJobRef.current = null;
             setRecStart(null);
+            setCompose(null);
             setStage({ mode: "idle" });
           }
+          break;
+        case "compose_progress":
+          setCompose({ stage: ev.stage, pct: ev.pct });
           break;
         case "video_ready":
           liveJobRef.current = null;
           setRecStart(null);
+          setCompose(null);
           setStage({ mode: "done", jobId: ev.jobId, videoUrl: ev.videoUrl, durationSec: ev.durationSec });
           break;
         case "error":
@@ -199,7 +209,7 @@ export function useDemoSession() {
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ message }),
+          body: JSON.stringify({ message, model }),
         });
 
         if (!res.ok) {
@@ -224,8 +234,8 @@ export function useDemoSession() {
         throw err;
       }
     },
-    [handleEvent, getToken, recoverJob],
+    [handleEvent, getToken, recoverJob, model],
   );
 
-  return { messages, busy, stage, setStage, ticks, error, recStart, send };
+  return { messages, busy, stage, setStage, ticks, compose, error, recStart, send, model, setModel };
 }

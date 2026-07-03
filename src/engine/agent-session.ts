@@ -6,7 +6,7 @@ import { BrowserSession, observationText } from "./browser-session.ts";
 import { getLocalAgentStore } from "./sdk-store.ts";
 import { composeVideo } from "./compose.ts";
 import { createJob, jobDir } from "./jobs.ts";
-import { persistJob, persistMessage, persistSession } from "./db.ts";
+import { flushDb, persistJob, persistMessage, persistSession } from "./db.ts";
 import { uploadVideo } from "./storage.ts";
 import { apiUrl } from "../lib/api-base.ts";
 import type {
@@ -72,6 +72,8 @@ export class AgentSession {
   private hasStarted = false;
   private busy = false;
   private userId: string | undefined;
+  private turnParts: ChatPart[] | null = null;
+  private model = "composer-2.5";
 
   private params: DemoParams | null = null;
   private job: DemoJob | null = null;
@@ -93,6 +95,16 @@ export class AgentSession {
     if (this.job && (ev.type === "job_created" || ev.type === "action" || ev.type === "job_status" || ev.type === "video_ready")) {
       persistJob(this.job);
     }
+  }
+
+  /**
+   * Surface a tool call to the client and the persisted transcript. The SDK
+   * stream reports every custom tool as just "mcp", so each tool announces
+   * itself with a one-word studio label instead.
+   */
+  private noteToolCall(label: string) {
+    this.emit({ type: "tool_call", name: label });
+    this.turnParts?.push({ type: "tool-call", toolCallId: `tc-${this.turnParts.length}`, toolName: label });
   }
 
   /** Associate this session with the authenticated Clerk user (first writer wins). */
@@ -119,14 +131,34 @@ export class AgentSession {
     if (!apiKey) throw new Error("CURSOR_API_KEY is not set");
     this.agent = await Agent.create({
       apiKey,
-      model: { id: "composer-2.5" },
+      model: { id: this.model },
       local: { cwd: process.cwd(), customTools: this.buildTools(), store: getLocalAgentStore() },
     });
     return this.agent;
   }
 
+  /**
+   * Switch the Cursor model. The agent is recreated on the next turn (a model
+   * can't change mid-agent), so its internal context resets and the system
+   * prompt is re-sent; the client keeps its own chat history.
+   */
+  setModel(modelId: string): void {
+    if (!modelId || modelId === this.model) return;
+    this.model = modelId;
+    const old = this.agent;
+    this.agent = null;
+    this.hasStarted = false;
+    if (old) {
+      Promise.resolve(old[Symbol.asyncDispose]?.()).catch(() => {});
+    }
+  }
+
   get isBusy(): boolean {
     return this.busy;
+  }
+
+  get hasActiveJob(): boolean {
+    return this.job != null;
   }
 
   async handleMessage(message: string): Promise<void> {
@@ -136,6 +168,7 @@ export class AgentSession {
     }
     this.busy = true;
     const assistantParts: ChatPart[] = [];
+    this.turnParts = assistantParts;
     persistSession(this.id, this.userId);
     persistMessage(this.id, "user", [{ type: "text", text: message }]);
     try {
@@ -154,12 +187,14 @@ export class AgentSession {
               else assistantParts.push({ type: "text", text: block.text });
             }
           }
-        } else if (event.type === "tool_call" && event.status === "running") {
+        } else if (event.type === "tool_call" && event.status === "running" && event.name !== "mcp") {
+          // Custom ("mcp") tools announce themselves via noteToolCall with a
+          // real label; only surface non-custom tools from the stream.
           this.emit({ type: "tool_call", name: event.name });
           assistantParts.push({
             type: "tool-call",
             toolCallId: `tc-${assistantParts.length}`,
-            toolName: event.name === "mcp" ? "studio_tool" : event.name,
+            toolName: event.name,
           });
         }
       }
@@ -168,6 +203,11 @@ export class AgentSession {
         console.error(`[session ${this.id}] agent run failed:`, JSON.stringify(result));
         const detail = (result as any).error?.message ?? (result as any).error ?? (result as any).message;
         this.emit({ type: "error", message: `Agent run failed${detail ? `: ${detail}` : "."}` });
+        // A run that died without streaming anything is the "sick process"
+        // signature — see noteInstantAgentFailure.
+        if (assistantParts.length === 0 && noteInstantAgentFailure()) {
+          this.emit({ type: "error", message: "The studio is restarting itself to recover — try again in ~30 seconds." });
+        }
       }
     } catch (err) {
       this.emit({ type: "error", message: err instanceof Error ? err.message : String(err) });
@@ -177,6 +217,7 @@ export class AgentSession {
       if (this.browser && this.job?.status === "recording") {
         await this.failJob("agent turn ended without finishing the demo");
       }
+      this.turnParts = null;
       if (assistantParts.length > 0) persistMessage(this.id, "assistant", assistantParts);
       this.emit({ type: "agent_turn_done" });
     }
@@ -205,6 +246,7 @@ export class AgentSession {
           required: ["goal", "startUrl"],
         },
         execute: async (args: any): Promise<ToolResult> => {
+          this.noteToolCall("plan");
           this.params = { goal: String(args.goal), startUrl: String(args.startUrl) };
           this.emit({ type: "plan", goal: this.params.goal, startUrl: this.params.startUrl });
           return text(JSON.stringify({ saved: true, ...this.params, next: "Ask the user to confirm, then call start_demo." }));
@@ -215,6 +257,7 @@ export class AgentSession {
         description: "Open a recorded cloud browser at the start URL and begin the demo. Returns the initial page observation. Only call after the user confirmed the plan.",
         inputSchema: { type: "object", properties: {} },
         execute: async (): Promise<ToolResult> => {
+          this.noteToolCall("roll");
           if (!this.params) return { ...text("No demo params saved — call set_demo_params first."), isError: true };
           if (this.browser) return { ...text("A demo is already in progress."), isError: true };
           try {
@@ -271,6 +314,7 @@ export class AgentSession {
           required: ["action"],
         },
         execute: async (args: any): Promise<ToolResult> => {
+          this.noteToolCall("action");
           if (!this.browser || !this.job) return { ...text("No demo in progress — call start_demo first."), isError: true };
           if (this.actionCount >= MAX_ACTIONS) {
             return { ...text(`Max ${MAX_ACTIONS} actions reached — call finish_demo now.`), isError: true };
@@ -313,6 +357,7 @@ export class AgentSession {
         description: "Re-observe the current page (elements list + screenshot). Only needed if the latest list is stale.",
         inputSchema: { type: "object", properties: {} },
         execute: async (): Promise<ToolResult> => {
+          this.noteToolCall("observe");
           if (!this.browser) return { ...text("No demo in progress."), isError: true };
           this.lastObs = await this.browser.observe();
           return {
@@ -332,32 +377,47 @@ export class AgentSession {
           required: ["title"],
         },
         execute: async (args: any): Promise<ToolResult> => {
+          this.noteToolCall("wrap");
           if (!this.browser || !this.job || !this.params) {
             return { ...text("No demo in progress."), isError: true };
           }
           const job = this.job;
           const browser = this.browser;
+          // Stage-by-stage visibility for the composing overlay and fly logs;
+          // events also feed the SSE stream and the headless-run watchdog.
+          const stage = (name: string, pct?: number) => {
+            console.log(`[job ${job.id}] compose: ${name}${pct != null ? ` ${(pct * 100).toFixed(0)}%` : ""}`);
+            this.emit({ type: "compose_progress", jobId: job.id, stage: name, pct });
+          };
           try {
             job.status = "composing";
             this.emit({ type: "job_status", jobId: job.id, status: "composing" });
 
+            stage("processing frames");
             const frames = await browser.stopRecording();
             const title = String(args.title || this.params.goal);
             const host = new URL(this.params.startUrl).host;
+            stage("printing captions");
             const overlays = await browser.renderOverlays({
               W: OUTPUT.width, H: OUTPUT.height,
               captions: this.captions.map((c) => c.text),
               brand: host.replace(/^www\./, "").toUpperCase(),
-              title,
-              subtitle: "DEMO STUDIO · Walkthrough",
-              outro: host,
             });
             await browser.close();
             this.browser = null;
 
+            stage("encoding cut", 0);
+            let lastPct = 0;
             const out = await composeVideo({
               frames, captions: this.captions, overlays,
               outDir: jobDir(job.id), width: OUTPUT.width, height: OUTPUT.height, fps: OUTPUT.fps,
+              onProgress: (pct) => {
+                // Encode is far faster than realtime; only ship meaningful steps.
+                if (pct - lastPct >= 0.05 || pct >= 1) {
+                  lastPct = pct;
+                  stage("encoding cut", pct);
+                }
+              },
             });
 
             const recipe: Recipe = {
@@ -378,6 +438,7 @@ export class AgentSession {
             fs.rmSync(path.join(jobDir(job.id), "frames"), { recursive: true, force: true });
 
             // Durable copy in Supabase Storage when configured; local disk stays the fallback.
+            stage("uploading to storage");
             job.videoUrl = await uploadVideo(job.id, out.finalPath);
 
             job.title = title;
@@ -424,6 +485,35 @@ export class AgentSession {
 
 // Session registry, HMR-safe.
 const sessions: Map<string, AgentSession> = ((globalThis as any).__demoSessions ??= new Map());
+
+/**
+ * Self-heal for a failure mode observed twice in prod: after hours of uptime,
+ * every Cursor run — including on freshly created agents — fails within ~1s
+ * with no output, and only a process restart clears it. After two such
+ * instant failures inside 5 minutes, exit non-zero (Fly's restart policy
+ * brings the machine back in seconds) — but never while a recording is live.
+ * Returns true when a restart has been scheduled.
+ */
+const instantFailures: number[] = [];
+function noteInstantAgentFailure(): boolean {
+  // Only self-restart where a supervisor restarts us (Fly) — never kill a
+  // local Next.js dev server that happens to import this module.
+  if (!process.env.FLY_APP_NAME) return false;
+  const now = Date.now();
+  while (instantFailures.length && now - instantFailures[0] > 5 * 60_000) instantFailures.shift();
+  instantFailures.push(now);
+  if (instantFailures.length < 2) return false;
+  if ([...sessions.values()].some((s) => s.hasActiveJob)) return false;
+  console.error("[health] repeated instant agent-run failures with no active jobs — exiting for a clean restart");
+  setTimeout(async () => {
+    try {
+      await flushDb();
+    } finally {
+      process.exit(1);
+    }
+  }, 1_000);
+  return true;
+}
 
 export function createSession(): AgentSession {
   const id = `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
