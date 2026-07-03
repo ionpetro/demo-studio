@@ -19,6 +19,10 @@ function headers(): Record<string, string> {
 }
 
 async function ensureBucket(): Promise<void> {
+  // Reset on failure so a transient error doesn't permanently poison uploads
+  // for the rest of the process's life (the cached promise would otherwise
+  // stay rejected forever, and every future upload would fail without ever
+  // retrying the bucket-create call).
   bucketReady ??= (async () => {
     const base = process.env.SUPABASE_URL!.replace(/\/$/, "");
     const res = await fetch(`${base}/storage/v1/bucket`, {
@@ -31,7 +35,10 @@ async function ensureBucket(): Promise<void> {
       const body = await res.text().catch(() => "");
       if (!/already exists/i.test(body)) throw new Error(`bucket create failed (${res.status}): ${body.slice(0, 160)}`);
     }
-  })();
+  })().catch((err) => {
+    bucketReady = null;
+    throw err;
+  });
   return bucketReady;
 }
 

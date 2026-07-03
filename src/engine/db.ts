@@ -42,6 +42,10 @@ function getPool(): pg.Pool {
 }
 
 function ensureSchema(): Promise<void> {
+  // Reset on failure so a transient DDL/connection hiccup doesn't permanently
+  // poison persistence for the rest of the process's life (the cached promise
+  // would otherwise stay rejected forever, and every future write would fail
+  // without ever retrying).
   schemaReady ??= (async () => {
     await getPool().query(`
       create table if not exists demo_sessions (
@@ -96,7 +100,10 @@ function ensureSchema(): Promise<void> {
       alter table demo_jobs enable row level security;
       alter table demo_runs enable row level security;
     `);
-  })();
+  })().catch((err) => {
+    schemaReady = null;
+    throw err;
+  });
   return schemaReady;
 }
 
