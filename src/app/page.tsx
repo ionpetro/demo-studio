@@ -199,7 +199,7 @@ export default function Home() {
                 <div className="hero-rise flex flex-col items-center gap-4">
                   <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
                     <span className="rec-dot size-1.5 rounded-full bg-rec" />
-                    ready on set
+                    ready
                   </span>
                   <h1 className="font-display text-4xl font-semibold leading-[1.1] tracking-tight">
                     What are we
