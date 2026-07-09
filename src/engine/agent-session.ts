@@ -230,7 +230,7 @@ export class AgentSession {
     if (this.job) {
       this.job.status = "error";
       this.job.error = reason;
-      this.emit({ type: "job_status", jobId: this.job.id, status: "error" });
+      this.emit({ type: "job_status", jobId: this.job.id, status: "error", error: reason });
       // A failed take can leave hundreds of MB of screencast frames behind.
       // The success path already removes these; do the same on failure so a
       // run of stalls doesn't exhaust the disk on the recording box.

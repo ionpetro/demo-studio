@@ -42,27 +42,41 @@ async function ensureBucket(): Promise<void> {
 }
 
 /**
- * Upload a finished MP4; returns its public URL, or undefined when storage is
- * not configured or the upload fails (callers fall back to local serving).
+ * Upload a finished MP4 and return its public URL. Returns undefined only
+ * when storage is not configured (local-first: callers serve from disk).
+ * When storage IS configured, a failed upload THROWS after retries — the old
+ * log-and-return-undefined behavior let the job be marked done with a link
+ * that only worked until the recording box's disk sweep or next deploy.
  */
 export async function uploadVideo(jobId: string, filePath: string): Promise<string | undefined> {
   if (!storageEnabled()) return undefined;
-  try {
-    await ensureBucket();
-    const base = process.env.SUPABASE_URL!.replace(/\/$/, "");
-    const objectPath = `${jobId}.mp4`;
-    const res = await fetch(`${base}/storage/v1/object/${BUCKET}/${objectPath}`, {
-      method: "POST",
-      headers: { ...headers(), "Content-Type": "video/mp4", "x-upsert": "true" },
-      body: fs.readFileSync(filePath),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`upload failed (${res.status}): ${body.slice(0, 160)}`);
+  const ATTEMPTS = 3;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    try {
+      await ensureBucket();
+      const base = process.env.SUPABASE_URL!.replace(/\/$/, "");
+      const objectPath = `${jobId}.mp4`;
+      const res = await fetch(`${base}/storage/v1/object/${BUCKET}/${objectPath}`, {
+        method: "POST",
+        headers: { ...headers(), "Content-Type": "video/mp4", "x-upsert": "true" },
+        body: fs.readFileSync(filePath),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`upload failed (${res.status}): ${body.slice(0, 160)}`);
+      }
+      return `${base}/storage/v1/object/public/${BUCKET}/${objectPath}`;
+    } catch (err) {
+      lastErr = err;
+      console.error(
+        `[storage] uploadVideo(${jobId}) attempt ${attempt}/${ATTEMPTS} failed:`,
+        err instanceof Error ? err.message : err,
+      );
+      if (attempt < ATTEMPTS) await new Promise((r) => setTimeout(r, 2_000 * attempt));
     }
-    return `${base}/storage/v1/object/public/${BUCKET}/${objectPath}`;
-  } catch (err) {
-    console.error(`[storage] uploadVideo(${jobId}) failed:`, err instanceof Error ? err.message : err);
-    return undefined;
   }
+  throw new Error(
+    `video upload to storage failed: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
+  );
 }

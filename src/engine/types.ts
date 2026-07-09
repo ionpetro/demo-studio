@@ -121,7 +121,7 @@ export type SessionEvent =
   | { type: "job_created"; jobId: string; goal: string; startUrl: string }
   | { type: "live_view"; jobId: string; url: string }
   | { type: "action"; jobId: string; n: number; action: string; caption: string; ok: boolean; error?: string }
-  | { type: "job_status"; jobId: string; status: JobStatus }
+  | { type: "job_status"; jobId: string; status: JobStatus; error?: string }
   | { type: "compose_progress"; jobId: string; stage: string; pct?: number }
   | { type: "video_ready"; jobId: string; videoUrl: string; durationSec: number }
   | { type: "error"; message: string };

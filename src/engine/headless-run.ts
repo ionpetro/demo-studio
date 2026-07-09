@@ -177,7 +177,12 @@ function runAttempt(run: DemoRun, attempt: number): Promise<void> {
       run.actions.push({ n: ev.n, action: ev.action, caption: ev.caption, ok: ev.ok, error: ev.error });
     } else if (ev.type === "job_status") {
       if (ev.status === "composing") run.status = "composing";
-      if (ev.status === "error" && run.status !== "done") run.status = "error";
+      if (ev.status === "error" && run.status !== "done") {
+        run.status = "error";
+        // Carry the job's failure reason: pollers used to see status "error"
+        // with error null (e.g. the ffmpeg watchdog kill was invisible).
+        run.error ??= ev.error;
+      }
     } else if (ev.type === "video_ready") {
       run.status = "done";
       run.durationSec = ev.durationSec;
