@@ -8,7 +8,7 @@ import { getLocalAgentStore } from "./sdk-store.ts";
 import { composeVideo } from "./compose.ts";
 import { createJob, jobDir } from "./jobs.ts";
 import { flushDb, persistJob, persistMessage, persistSession } from "./db.ts";
-import { uploadVideo } from "./storage.ts";
+import { uploadThumbnail, uploadVideo } from "./storage.ts";
 import { apiUrl } from "../lib/api-base.ts";
 import type {
   BrowserAction, ChatPart, DemoJob, DemoParams, Observation, Recipe, RecipeStep, SessionEvent, TimedCaption,
@@ -74,6 +74,8 @@ export class AgentSession {
   private busy = false;
   private userId: string | undefined;
   private turnParts: ChatPart[] | null = null;
+  /** When the current job's cloud browser came up (usage accounting). */
+  private jobStartedAt = 0;
   private model = "composer-2.5";
 
   private params: DemoParams | null = null;
@@ -279,6 +281,7 @@ export class AgentSession {
 
             const framesDir = path.join(jobDir(this.job.id), "frames");
             this.browser = await BrowserSession.create(framesDir);
+            this.jobStartedAt = Date.now();
             this.job.liveViewUrl = this.browser.liveViewUrl;
             if (this.browser.liveViewUrl) {
               this.emit({ type: "live_view", jobId: this.job.id, url: this.browser.liveViewUrl });
@@ -413,10 +416,12 @@ export class AgentSession {
               captions: this.captions.map((c) => c.text),
               brand: host.replace(/^www\./, "").toUpperCase(),
             });
+            const browserSec = this.jobStartedAt ? (Date.now() - this.jobStartedAt) / 1000 : undefined;
             await browser.close();
             this.browser = null;
 
             stage("encoding cut", 0);
+            const composeStart = Date.now();
             let lastPct = 0;
             const out = await composeVideo({
               frames, captions: this.captions, overlays, activeWindows: browser.getActionWindows(),
@@ -450,7 +455,20 @@ export class AgentSession {
             // Durable copy in Supabase Storage when configured; local disk stays the fallback.
             stage("uploading to storage");
             job.videoUrl = await uploadVideo(job.id, out.finalPath);
+            // Best-effort: a finished video without a poster frame is still a video.
+            job.thumbUrl = await uploadThumbnail(job.id, out.thumbPath).catch((err) => {
+              console.error(`[job ${job.id}] thumbnail upload failed:`, err instanceof Error ? err.message : err);
+              return undefined;
+            });
 
+            job.recipe = recipe;
+            job.usage = {
+              model: this.model,
+              browserSec: browserSec != null ? +browserSec.toFixed(1) : undefined,
+              composeSec: +((Date.now() - composeStart) / 1000).toFixed(1),
+              frames: out.frameCount,
+              background: out.background ?? undefined,
+            };
             job.title = title;
             job.status = "done";
             job.videoPath = out.finalPath;

@@ -211,7 +211,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       json(res, 400, { jsonrpc: "2.0", error: { code: -32700, message: "Parse error" }, id: null }, origin);
       return;
     }
-    const mcpServer = buildMcpServer(publicBase(req), auth.userId);
+    const mcpServer = buildMcpServer(publicBase(req), auth.userId, auth.clientId);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => {
       transport.close();

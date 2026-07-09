@@ -16,6 +16,8 @@ export interface RunRecord {
   startUrl: string;
   status: string;
   userId?: string;
+  /** OAuth client that created the run over MCP (abuse tracing/analytics). */
+  clientId?: string;
   jobId?: string;
   liveViewUrl?: string;
   durationSec?: number;
@@ -88,6 +90,10 @@ function ensureSchema(): Promise<void> {
         updated_at timestamptz not null default now()
       );
       alter table demo_jobs add column if not exists title text;
+      alter table demo_jobs add column if not exists thumb_url text;
+      alter table demo_jobs add column if not exists recipe jsonb;
+      alter table demo_jobs add column if not exists usage jsonb;
+      alter table demo_runs add column if not exists client_id text;
       create index if not exists demo_messages_session_idx on demo_messages (session_id, id);
       create index if not exists demo_sessions_user_idx on demo_sessions (user_id, created_at desc);
       create index if not exists demo_jobs_user_idx on demo_jobs (user_id, created_at desc);
@@ -154,13 +160,17 @@ export function persistMessage(sessionId: string, role: "user" | "assistant", pa
 export function persistJob(job: DemoJob): void {
   tryDb(`persistJob(${job.id})`, () =>
     getPool().query(
-      `insert into demo_jobs (id, user_id, session_id, goal, title, start_url, status, actions, video_url, duration_sec, error, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, to_timestamp($12 / 1000.0), now())
+      `insert into demo_jobs (id, user_id, session_id, goal, title, start_url, status, actions, video_url, thumb_url, recipe, usage, duration_sec, error, created_at, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11::jsonb, $12::jsonb, $13, $14, to_timestamp($15 / 1000.0), now())
        on conflict (id) do update set
          status = excluded.status, title = coalesce(excluded.title, demo_jobs.title), actions = excluded.actions,
-         video_url = excluded.video_url, duration_sec = excluded.duration_sec, error = excluded.error, updated_at = now()`,
+         video_url = excluded.video_url, thumb_url = coalesce(excluded.thumb_url, demo_jobs.thumb_url),
+         recipe = coalesce(excluded.recipe, demo_jobs.recipe), usage = coalesce(excluded.usage, demo_jobs.usage),
+         duration_sec = excluded.duration_sec, error = excluded.error, updated_at = now()`,
       [job.id, job.userId ?? null, job.sessionId ?? null, job.goal, job.title ?? null, job.startUrl, job.status,
-       JSON.stringify(job.actions), job.videoUrl ?? null, job.durationSec ?? null, job.error ?? null, job.createdAt],
+       JSON.stringify(job.actions), job.videoUrl ?? null, job.thumbUrl ?? null,
+       job.recipe ? JSON.stringify(job.recipe) : null, job.usage ? JSON.stringify(job.usage) : null,
+       job.durationSec ?? null, job.error ?? null, job.createdAt],
     ),
   );
 }
@@ -172,6 +182,7 @@ export interface JobRecord {
   status: string;
   userId: string | null;
   videoUrl: string | null;
+  thumbUrl: string | null;
   durationSec: number | null;
   createdAt: number;
 }
@@ -184,6 +195,7 @@ function rowToJobRecord(r: any): JobRecord {
     status: r.status,
     userId: r.user_id ?? null,
     videoUrl: r.video_url ?? null,
+    thumbUrl: r.thumb_url ?? null,
     durationSec: r.duration_sec ?? null,
     createdAt: new Date(r.created_at).getTime(),
   };
@@ -195,7 +207,7 @@ export async function listUserJobs(userId: string): Promise<JobRecord[]> {
   try {
     await ensureSchema();
     const { rows } = await getPool().query(
-      `select id, title, goal, status, user_id, video_url, duration_sec, created_at
+      `select id, title, goal, status, user_id, video_url, thumb_url, duration_sec, created_at
        from demo_jobs where user_id = $1 and status = 'done' and video_url is not null
        order by created_at desc limit 100`,
       [userId],
@@ -213,7 +225,7 @@ export async function loadJobRecord(id: string): Promise<JobRecord | undefined> 
   try {
     await ensureSchema();
     const { rows } = await getPool().query(
-      `select id, title, goal, status, user_id, video_url, duration_sec, created_at from demo_jobs where id = $1`,
+      `select id, title, goal, status, user_id, video_url, thumb_url, duration_sec, created_at from demo_jobs where id = $1`,
       [id],
     );
     return rows[0] ? rowToJobRecord(rows[0]) : undefined;
@@ -227,13 +239,13 @@ export async function loadJobRecord(id: string): Promise<JobRecord | undefined> 
 export function persistRun(run: RunRecord): void {
   tryDb(`persistRun(${run.id})`, () =>
     getPool().query(
-      `insert into demo_runs (id, user_id, goal, start_url, status, job_id, live_view_url, duration_sec, error, actions, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, to_timestamp($11 / 1000.0), now())
+      `insert into demo_runs (id, user_id, client_id, goal, start_url, status, job_id, live_view_url, duration_sec, error, actions, created_at, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, to_timestamp($12 / 1000.0), now())
        on conflict (id) do update set
          status = excluded.status, job_id = excluded.job_id, live_view_url = excluded.live_view_url,
          duration_sec = excluded.duration_sec, error = excluded.error, actions = excluded.actions, updated_at = now()`,
-      [run.id, run.userId ?? null, run.goal, run.startUrl, run.status, run.jobId ?? null, run.liveViewUrl ?? null,
-       run.durationSec ?? null, run.error ?? null, JSON.stringify(run.actions), run.createdAt],
+      [run.id, run.userId ?? null, run.clientId ?? null, run.goal, run.startUrl, run.status, run.jobId ?? null,
+       run.liveViewUrl ?? null, run.durationSec ?? null, run.error ?? null, JSON.stringify(run.actions), run.createdAt],
     ),
   );
 }
@@ -252,6 +264,7 @@ export async function loadRunRecord(id: string): Promise<RunRecord | undefined> 
       startUrl: r.start_url,
       status: r.status,
       userId: r.user_id ?? undefined,
+      clientId: r.client_id ?? undefined,
       jobId: r.job_id ?? undefined,
       liveViewUrl: r.live_view_url ?? undefined,
       durationSec: r.duration_sec ?? undefined,

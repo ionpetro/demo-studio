@@ -102,9 +102,22 @@ export interface DemoJob {
   actions: ActionLog[];
   videoPath?: string;
   videoUrl?: string;
+  thumbUrl?: string;
   durationSec?: number;
   error?: string;
   createdAt: number;
+  /** Durable copy of the replay recipe (recipe.json is on swept local disk). */
+  recipe?: Recipe;
+  usage?: JobUsage;
+}
+
+/** Per-run resource accounting — the raw material for quotas and pricing. */
+export interface JobUsage {
+  model?: string;
+  browserSec?: number;
+  composeSec?: number;
+  frames?: number;
+  background?: string;
 }
 
 /** One piece of a stored chat message (mirrors the client's ChatPart shape). */

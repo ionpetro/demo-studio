@@ -15,6 +15,7 @@ interface VideoItem {
   title: string | null;
   goal: string;
   videoUrl: string;
+  thumbUrl: string | null;
   durationSec: number | null;
   createdAt: number;
 }
@@ -83,8 +84,14 @@ export default function VideosPage() {
                 className="group flex flex-col overflow-hidden rounded-xl border bg-background transition-colors hover:border-rec/50"
               >
                 <div className="relative aspect-video bg-black">
-                  {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                  <video className="size-full object-cover" src={`${v.videoUrl}#t=0.5`} preload="metadata" muted playsInline />
+                  {/* Poster spares the grid a metadata fetch per tile; older videos without one keep the first-frame fallback. */}
+                  {v.thumbUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img className="size-full object-cover" src={v.thumbUrl} alt="" loading="lazy" />
+                  ) : (
+                    // eslint-disable-next-line jsx-a11y/media-has-caption
+                    <video className="size-full object-cover" src={`${v.videoUrl}#t=0.5`} preload="metadata" muted playsInline />
+                  )}
                   <span className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity group-hover:opacity-100">
                     <PlayIcon className="size-9 fill-white text-white drop-shadow" />
                   </span>

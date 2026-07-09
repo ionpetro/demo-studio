@@ -50,16 +50,32 @@ async function ensureBucket(): Promise<void> {
  */
 export async function uploadVideo(jobId: string, filePath: string): Promise<string | undefined> {
   if (!storageEnabled()) return undefined;
+  try {
+    return await uploadObject(`${jobId}.mp4`, filePath, "video/mp4");
+  } catch (err) {
+    throw new Error(`video upload to storage failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * Upload the poster frame next to the MP4. Best-effort at the call site — a
+ * missing thumbnail must never fail a finished job.
+ */
+export async function uploadThumbnail(jobId: string, filePath: string): Promise<string | undefined> {
+  if (!storageEnabled()) return undefined;
+  return uploadObject(`${jobId}.jpg`, filePath, "image/jpeg");
+}
+
+async function uploadObject(objectPath: string, filePath: string, contentType: string): Promise<string> {
   const ATTEMPTS = 3;
   let lastErr: unknown;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     try {
       await ensureBucket();
       const base = process.env.SUPABASE_URL!.replace(/\/$/, "");
-      const objectPath = `${jobId}.mp4`;
       const res = await fetch(`${base}/storage/v1/object/${BUCKET}/${objectPath}`, {
         method: "POST",
-        headers: { ...headers(), "Content-Type": "video/mp4", "x-upsert": "true" },
+        headers: { ...headers(), "Content-Type": contentType, "x-upsert": "true" },
         body: fs.readFileSync(filePath),
       });
       if (!res.ok) {
@@ -70,13 +86,11 @@ export async function uploadVideo(jobId: string, filePath: string): Promise<stri
     } catch (err) {
       lastErr = err;
       console.error(
-        `[storage] uploadVideo(${jobId}) attempt ${attempt}/${ATTEMPTS} failed:`,
+        `[storage] upload(${objectPath}) attempt ${attempt}/${ATTEMPTS} failed:`,
         err instanceof Error ? err.message : err,
       );
       if (attempt < ATTEMPTS) await new Promise((r) => setTimeout(r, 2_000 * attempt));
     }
   }
-  throw new Error(
-    `video upload to storage failed: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
-  );
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }

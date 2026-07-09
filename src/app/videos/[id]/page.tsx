@@ -15,6 +15,7 @@ interface WatchData {
   title: string | null;
   goal: string;
   videoUrl: string;
+  thumbUrl: string | null;
   durationSec: number | null;
   createdAt: number;
   author: { name: string; imageUrl: string | null } | null;
@@ -78,6 +79,7 @@ export default function WatchPage() {
             <video
               className="aspect-video w-full rounded-xl border bg-black shadow-[0_0_80px_-20px_oklch(0_0_0/60%)]"
               src={data.videoUrl}
+              poster={data.thumbUrl ?? undefined}
               controls
               autoPlay
               playsInline

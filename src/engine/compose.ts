@@ -79,8 +79,12 @@ export interface ComposeInput {
 
 export interface ComposeResult {
   finalPath: string;
+  /** Poster frame extracted from the finished cut (outDir/thumb.jpg). */
+  thumbPath: string;
   durationSec: number;
   frameCount: number;
+  /** Basename of the backdrop used, for debugging "this video looks off". */
+  background: string | null;
 }
 
 // One encode at a time: two concurrent ffmpeg runs starve the 1GB box —
@@ -216,9 +220,24 @@ async function composeVideoNow(input: ComposeInput): Promise<ComposeResult> {
   // whole file first.
   await ff([...inputs, "-filter_complex", fc, "-map", "[v]", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-movflags", "+faststart", "main.mp4"], tmp, onTime);
 
+  // Poster frame for the library grid / watch page, from a settled moment
+  // shortly into the cut rather than the very first frame.
+  await ff(
+    ["-ss", Math.min(2, total / 3).toFixed(2), "-i", "main.mp4", "-frames:v", "1", "-q:v", "4", "thumb.jpg"],
+    tmp,
+  );
+
   const finalPath = path.join(outDir, "final.mp4");
+  const thumbPath = path.join(outDir, "thumb.jpg");
   fs.copyFileSync(path.join(tmp, "main.mp4"), finalPath);
+  fs.copyFileSync(path.join(tmp, "thumb.jpg"), thumbPath);
   fs.rmSync(tmp, { recursive: true, force: true });
 
-  return { finalPath, durationSec: +total.toFixed(2), frameCount: frames.length };
+  return {
+    finalPath,
+    thumbPath,
+    durationSec: +total.toFixed(2),
+    frameCount: frames.length,
+    background: bg ? path.basename(bg) : null,
+  };
 }

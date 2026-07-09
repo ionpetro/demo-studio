@@ -56,6 +56,8 @@ function toFetchRequest(req: http.IncomingMessage): Request {
 export interface McpAuth {
   /** Clerk user the token belongs to; undefined for the static-token escape hatch. */
   userId?: string;
+  /** OAuth client the token was issued to (which agent/tool is calling). */
+  clientId?: string;
 }
 
 /**
@@ -80,7 +82,7 @@ export async function authorizeMcp(req: http.IncomingMessage): Promise<McpAuth |
       });
       if (state.isAuthenticated) {
         const auth = state.toAuth();
-        return { userId: auth.userId ?? undefined };
+        return { userId: auth.userId ?? undefined, clientId: auth.clientId ?? undefined };
       }
     } catch (err) {
       console.error("[mcp-auth] token verification failed:", err instanceof Error ? err.message : err);

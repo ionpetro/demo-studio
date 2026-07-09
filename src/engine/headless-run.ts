@@ -19,6 +19,8 @@ export interface DemoRun {
   status: RunStatus;
   /** Clerk user who requested the run (OAuth MCP callers); owns the job/video. */
   userId?: string;
+  /** OAuth client the request came from (which agent/tool). */
+  clientId?: string;
   jobId?: string;
   liveViewUrl?: string;
   durationSec?: number;
@@ -74,7 +76,7 @@ function releaseRunSlot(): void {
   else activeRuns--;
 }
 
-export function startDemoRun(goal: string, startUrl: string, userId?: string): DemoRun {
+export function startDemoRun(goal: string, startUrl: string, userId?: string, clientId?: string): DemoRun {
   const url = new URL(startUrl); // throws on invalid URL
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new Error("startUrl must be an http(s) URL");
@@ -89,7 +91,7 @@ export function startDemoRun(goal: string, startUrl: string, userId?: string): D
   // Unguessable id: the public watchUrl and status endpoints are keyed only on
   // this, so an enumerable id would let anyone read/poll other people's runs.
   const id = `run-${randomUUID()}`;
-  const run: DemoRun = { id, goal, startUrl, userId, status: "planning", actions: [], createdAt: Date.now() };
+  const run: DemoRun = { id, goal, startUrl, userId, clientId, status: "planning", actions: [], createdAt: Date.now() };
   runs.set(id, run);
   persistRun(run);
   void (async () => {
