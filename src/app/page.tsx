@@ -3,12 +3,11 @@
 import { Show, SignInButton, UserButton } from "@clerk/nextjs";
 import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
-import { CheckIcon, ClapperboardIcon, CopyIcon, DownloadIcon, FilmIcon, PanelRightCloseIcon, PanelRightOpenIcon, RotateCcwIcon, SquareArrowOutUpRightIcon, VideoIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, DownloadIcon, FilmIcon, PanelRightCloseIcon, PanelRightOpenIcon, RotateCcwIcon, SquareArrowOutUpRightIcon, VideoIcon } from "lucide-react";
 
 import {
   Conversation,
   ConversationContent,
-  ConversationEmptyState,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
@@ -196,14 +195,40 @@ export default function Home() {
         <Conversation className="min-h-0 flex-1">
           <ConversationContent className="mx-auto w-full max-w-3xl gap-5 px-4 py-5">
             {messages.length === 0 ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-6">
-                <ConversationEmptyState
-                  className="flex-none"
-                  icon={<ClapperboardIcon className="size-7" />}
-                  title=""
-                  description="Tell me what you want recorded — a feature, a flow, a page. I'll plan the shot list with you, drive a live browser while you watch, and hand you the MP4."
-                />
-                <div className="flex flex-col items-center gap-2">
+              <div className="flex flex-1 flex-col items-center justify-center gap-10 py-10 text-center">
+                <div className="hero-rise flex flex-col items-center gap-4">
+                  <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
+                    <span className="rec-dot size-1.5 rounded-full bg-rec" />
+                    ready on set
+                  </span>
+                  <h1 className="font-display text-4xl font-semibold leading-[1.1] tracking-tight">
+                    What are we
+                    <br />
+                    looping today?
+                  </h1>
+                  <p className="max-w-xs text-sm leading-relaxed text-muted-foreground">
+                    Describe the flow — I&apos;ll storyboard it, film a live browser on camera, and
+                    hand you the cut.
+                  </p>
+                </div>
+
+                <div className="hero-rise w-full max-w-sm" style={{ animationDelay: "140ms" }}>
+                  <div className="flex flex-col rounded-lg border bg-background/60 text-left font-mono text-[11px]">
+                    {[
+                      ["01", "direct", "tell me the flow to film"],
+                      ["02", "roll", "watch the live browser take"],
+                      ["03", "wrap", "captioned mp4, ready to share"],
+                    ].map(([n, verb, detail]) => (
+                      <div key={n} className="flex items-center gap-3 border-t px-4 py-2.5 first:border-t-0">
+                        <span className="text-muted-foreground/60">{n}</span>
+                        <span className="uppercase tracking-[0.2em] text-amber">{verb}</span>
+                        <span className="flex-1 truncate text-right text-muted-foreground">{detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="hero-rise flex flex-col items-center gap-2" style={{ animationDelay: "280ms" }}>
                   <div className="font-mono text-[10px] uppercase tracking-[0.3em] text-muted-foreground/70">
                     or let your own agent direct
                   </div>

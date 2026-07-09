@@ -108,6 +108,16 @@
   }
 }
 
+/* empty-state hero: staggered rise-in (delay set inline per block) */
+@keyframes hero-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+.hero-rise {
+  opacity: 0;
+  animation: hero-rise 0.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
 /* film grain over everything */
 .grain {
   pointer-events: none;
