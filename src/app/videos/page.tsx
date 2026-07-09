@@ -7,6 +7,7 @@ import { ClapperboardIcon, PlayIcon } from "lucide-react";
 
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { apiUrl } from "@/lib/api-base";
 import { timeAgo } from "@/lib/timeago";
 
@@ -46,14 +47,17 @@ export default function VideosPage() {
   }, [getToken]);
 
   return (
-    <div className="min-h-screen bg-[oklch(0.115_0.01_285)]">
+    <div className="min-h-screen bg-bg-deep">
       <header className="flex h-14 items-center justify-between border-b px-5">
         <Link href="/" className="font-display text-xl tracking-tight">
           demo<span className="text-rec">·</span>studio
         </Link>
-        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-          my videos
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+            my videos
+          </span>
+          <ThemeToggle />
+        </div>
       </header>
 
       <main className="mx-auto max-w-6xl px-6 py-10">
@@ -89,8 +93,10 @@ export default function VideosPage() {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img className="size-full object-cover" src={v.thumbUrl} alt="" loading="lazy" />
                   ) : (
+                    // preload="none": a grid of tiles must not each fetch
+                    // video metadata — that made the page crawl before thumbs.
                     // eslint-disable-next-line jsx-a11y/media-has-caption
-                    <video className="size-full object-cover" src={`${v.videoUrl}#t=0.5`} preload="metadata" muted playsInline />
+                    <video className="size-full object-cover" src={v.videoUrl} preload="none" muted playsInline />
                   )}
                   <span className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity group-hover:opacity-100">
                     <PlayIcon className="size-9 fill-white text-white drop-shadow" />

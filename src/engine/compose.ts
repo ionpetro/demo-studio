@@ -85,6 +85,8 @@ export interface ComposeResult {
   frameCount: number;
   /** Basename of the backdrop used, for debugging "this video looks off". */
   background: string | null;
+  /** Caption windows mapped onto the final video timeline (player chapters). */
+  chapters: { title: string; start: number }[];
 }
 
 // One encode at a time: two concurrent ffmpeg runs starve the 1GB box —
@@ -233,11 +235,18 @@ async function composeVideoNow(input: ComposeInput): Promise<ComposeResult> {
   fs.copyFileSync(path.join(tmp, "thumb.jpg"), thumbPath);
   fs.rmSync(tmp, { recursive: true, force: true });
 
+  // Same mapping the caption overlays use, so player chapters line up with
+  // what's burned into the video.
+  const chapters = captions
+    .filter((c) => c.text)
+    .map((c) => ({ title: c.text, start: +Math.max(0, videoTimeAt(Math.max(c.t, t0))).toFixed(2) }));
+
   return {
     finalPath,
     thumbPath,
     durationSec: +total.toFixed(2),
     frameCount: frames.length,
     background: bg ? path.basename(bg) : null,
+    chapters,
   };
 }

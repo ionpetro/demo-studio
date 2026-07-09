@@ -469,6 +469,7 @@ export class AgentSession {
             });
 
             job.recipe = recipe;
+            job.chapters = out.chapters;
             job.usage = {
               model: this.model,
               browserSec: browserSec != null ? +browserSec.toFixed(1) : undefined,

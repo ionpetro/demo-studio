@@ -109,6 +109,8 @@ export interface DemoJob {
   /** Durable copy of the replay recipe (recipe.json is on swept local disk). */
   recipe?: Recipe;
   usage?: JobUsage;
+  /** Caption windows on the video timeline — the watch player's chapters. */
+  chapters?: { title: string; start: number }[];
 }
 
 /** Per-run resource accounting — the raw material for quotas and pricing. */

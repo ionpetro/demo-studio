@@ -93,6 +93,7 @@ function ensureSchema(): Promise<void> {
       alter table demo_jobs add column if not exists thumb_url text;
       alter table demo_jobs add column if not exists recipe jsonb;
       alter table demo_jobs add column if not exists usage jsonb;
+      alter table demo_jobs add column if not exists chapters jsonb;
       alter table demo_runs add column if not exists client_id text;
       create index if not exists demo_messages_session_idx on demo_messages (session_id, id);
       create index if not exists demo_sessions_user_idx on demo_sessions (user_id, created_at desc);
@@ -160,16 +161,18 @@ export function persistMessage(sessionId: string, role: "user" | "assistant", pa
 export function persistJob(job: DemoJob): void {
   tryDb(`persistJob(${job.id})`, () =>
     getPool().query(
-      `insert into demo_jobs (id, user_id, session_id, goal, title, start_url, status, actions, video_url, thumb_url, recipe, usage, duration_sec, error, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11::jsonb, $12::jsonb, $13, $14, to_timestamp($15 / 1000.0), now())
+      `insert into demo_jobs (id, user_id, session_id, goal, title, start_url, status, actions, video_url, thumb_url, recipe, usage, chapters, duration_sec, error, created_at, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11::jsonb, $12::jsonb, $13::jsonb, $14, $15, to_timestamp($16 / 1000.0), now())
        on conflict (id) do update set
          status = excluded.status, title = coalesce(excluded.title, demo_jobs.title), actions = excluded.actions,
          video_url = excluded.video_url, thumb_url = coalesce(excluded.thumb_url, demo_jobs.thumb_url),
          recipe = coalesce(excluded.recipe, demo_jobs.recipe), usage = coalesce(excluded.usage, demo_jobs.usage),
+         chapters = coalesce(excluded.chapters, demo_jobs.chapters),
          duration_sec = excluded.duration_sec, error = excluded.error, updated_at = now()`,
       [job.id, job.userId ?? null, job.sessionId ?? null, job.goal, job.title ?? null, job.startUrl, job.status,
        JSON.stringify(job.actions), job.videoUrl ?? null, job.thumbUrl ?? null,
        job.recipe ? JSON.stringify(job.recipe) : null, job.usage ? JSON.stringify(job.usage) : null,
+       job.chapters ? JSON.stringify(job.chapters) : null,
        job.durationSec ?? null, job.error ?? null, job.createdAt],
     ),
   );
@@ -185,6 +188,7 @@ export interface JobRecord {
   thumbUrl: string | null;
   durationSec: number | null;
   createdAt: number;
+  chapters: { title: string; start: number }[] | null;
 }
 
 function rowToJobRecord(r: any): JobRecord {
@@ -198,6 +202,7 @@ function rowToJobRecord(r: any): JobRecord {
     thumbUrl: r.thumb_url ?? null,
     durationSec: r.duration_sec ?? null,
     createdAt: new Date(r.created_at).getTime(),
+    chapters: r.chapters ?? null,
   };
 }
 
@@ -207,7 +212,7 @@ export async function listUserJobs(userId: string): Promise<JobRecord[]> {
   try {
     await ensureSchema();
     const { rows } = await getPool().query(
-      `select id, title, goal, status, user_id, video_url, thumb_url, duration_sec, created_at
+      `select id, title, goal, status, user_id, video_url, thumb_url, duration_sec, created_at, chapters
        from demo_jobs where user_id = $1 and status = 'done' and video_url is not null
        order by created_at desc limit 100`,
       [userId],
@@ -225,7 +230,7 @@ export async function loadJobRecord(id: string): Promise<JobRecord | undefined> 
   try {
     await ensureSchema();
     const { rows } = await getPool().query(
-      `select id, title, goal, status, user_id, video_url, thumb_url, duration_sec, created_at from demo_jobs where id = $1`,
+      `select id, title, goal, status, user_id, video_url, thumb_url, duration_sec, created_at, chapters from demo_jobs where id = $1`,
       [id],
     );
     return rows[0] ? rowToJobRecord(rows[0]) : undefined;

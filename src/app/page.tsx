@@ -37,6 +37,7 @@ import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 import { WebPreview, WebPreviewBody, WebPreviewNavigation, WebPreviewUrl } from "@/components/ai-elements/web-preview";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { useDemoSession, type ChatMessage } from "@/hooks/use-demo-session";
 import { apiBase } from "@/lib/api-base";
 import { cn } from "@/lib/utils";
@@ -142,7 +143,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen overflow-hidden">
       {/* ── producer rail ───────────────────────────────────────────── */}
       <aside className="flex w-105 shrink-0 flex-col border-r bg-background">
         <header className="flex h-14 shrink-0 items-center justify-between border-b px-5">
@@ -153,6 +154,7 @@ export default function Home() {
             <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
               producer line
             </div>
+            <ThemeToggle />
             <Show when="signed-out">
               <SignInButton>
                 <Button size="sm" variant="outline">sign in</Button>
@@ -236,7 +238,7 @@ export default function Home() {
       </aside>
 
       {/* ── stage ───────────────────────────────────────────────────── */}
-      <main className="flex min-w-0 flex-1 flex-col bg-[oklch(0.115_0.01_285)]">
+      <main className="flex min-w-0 flex-1 flex-col bg-bg-deep">
         <div className="flex h-14 shrink-0 items-center justify-between border-b px-5 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
           <span className={cn("flex items-center gap-2", recording && "text-rec")}>
             <span className={cn("size-2 rounded-full bg-current", recording && "rec-dot")} />

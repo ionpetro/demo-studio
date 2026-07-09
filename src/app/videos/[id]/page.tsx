@@ -7,6 +7,8 @@ import { CheckIcon, ClapperboardIcon, DownloadIcon, LinkIcon } from "lucide-reac
 
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { DemoPlayer, type VideoChapter } from "@/components/demo-player";
 import { apiUrl } from "@/lib/api-base";
 import { timeAgo } from "@/lib/timeago";
 
@@ -18,6 +20,7 @@ interface WatchData {
   thumbUrl: string | null;
   durationSec: number | null;
   createdAt: number;
+  chapters: VideoChapter[] | null;
   author: { name: string; imageUrl: string | null } | null;
 }
 
@@ -43,17 +46,20 @@ export default function WatchPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[oklch(0.115_0.01_285)]">
+    <div className="min-h-screen bg-bg-deep">
       <header className="flex h-14 items-center justify-between border-b px-5">
         <Link href="/" className="font-display text-xl tracking-tight">
           demo<span className="text-rec">·</span>studio
         </Link>
-        <Link
-          href="/videos"
-          className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground hover:text-foreground"
-        >
-          my videos
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/videos"
+            className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground hover:text-foreground"
+          >
+            my videos
+          </Link>
+          <ThemeToggle />
+        </div>
       </header>
 
       <main className="mx-auto max-w-5xl px-6 py-10">
@@ -75,14 +81,11 @@ export default function WatchPage() {
 
         {data && (
           <div className="flex flex-col gap-5">
-            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-            <video
-              className="aspect-video w-full rounded-xl border bg-black shadow-[0_0_80px_-20px_oklch(0_0_0/60%)]"
+            <DemoPlayer
+              className="shadow-[0_0_80px_-20px_oklch(0_0_0/60%)]"
               src={data.videoUrl}
               poster={data.thumbUrl ?? undefined}
-              controls
-              autoPlay
-              playsInline
+              chapters={data.chapters}
             />
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex flex-col gap-3">
