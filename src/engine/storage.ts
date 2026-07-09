@@ -19,6 +19,9 @@ function headers(): Record<string, string> {
 }
 
 async function ensureBucket(): Promise<void> {
+  // Memoize success, but clear the memo on failure so one transient storage
+  // 5xx at boot doesn't cache a rejected promise forever — which would silently
+  // route every finished video to ephemeral local disk until a restart.
   bucketReady ??= (async () => {
     const base = process.env.SUPABASE_URL!.replace(/\/$/, "");
     const res = await fetch(`${base}/storage/v1/bucket`, {
@@ -31,7 +34,10 @@ async function ensureBucket(): Promise<void> {
       const body = await res.text().catch(() => "");
       if (!/already exists/i.test(body)) throw new Error(`bucket create failed (${res.status}): ${body.slice(0, 160)}`);
     }
-  })();
+  })().catch((err) => {
+    bucketReady = null; // allow the next upload to retry bucket creation
+    throw err;
+  });
   return bucketReady;
 }
 

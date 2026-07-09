@@ -62,7 +62,6 @@ export interface ComposeInput {
 
 export interface ComposeResult {
   finalPath: string;
-  rawPath: string;
   durationSec: number;
   frameCount: number;
 }
@@ -159,10 +158,8 @@ async function composeVideoNow(input: ComposeInput): Promise<ComposeResult> {
   await ff([...inputs, "-filter_complex", fc, "-map", "[v]", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-movflags", "+faststart", "main.mp4"], tmp, onTime);
 
   const finalPath = path.join(outDir, "final.mp4");
-  const rawPath = path.join(outDir, "raw.mp4");
   fs.copyFileSync(path.join(tmp, "main.mp4"), finalPath);
-  fs.copyFileSync(path.join(tmp, "main.mp4"), rawPath);
   fs.rmSync(tmp, { recursive: true, force: true });
 
-  return { finalPath, rawPath, durationSec: +total.toFixed(2), frameCount: frames.length };
+  return { finalPath, durationSec: +total.toFixed(2), frameCount: frames.length };
 }

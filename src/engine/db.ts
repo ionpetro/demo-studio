@@ -42,6 +42,9 @@ function getPool(): pg.Pool {
 }
 
 function ensureSchema(): Promise<void> {
+  // Memoize success, but clear the memo on failure so a transient blip at boot
+  // (DB unreachable for a moment) doesn't cache a rejected promise forever and
+  // permanently disable every subsequent write until a restart.
   schemaReady ??= (async () => {
     await getPool().query(`
       create table if not exists demo_sessions (
@@ -96,7 +99,10 @@ function ensureSchema(): Promise<void> {
       alter table demo_jobs enable row level security;
       alter table demo_runs enable row level security;
     `);
-  })();
+  })().catch((err) => {
+    schemaReady = null; // allow the next write to retry the schema check
+    throw err;
+  });
   return schemaReady;
 }
 

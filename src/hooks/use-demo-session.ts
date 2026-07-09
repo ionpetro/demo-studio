@@ -48,8 +48,9 @@ type SessionEvent =
 let nextId = 0;
 const uid = (prefix: string) => `${prefix}-${++nextId}`;
 
-const newSessionId = () =>
-  `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+// Unguessable session id: the session route accepts any client-supplied id, so
+// a weak one would let others POST into your live agent session.
+const newSessionId = () => `sess-${crypto.randomUUID()}`;
 
 async function* readSseEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<SessionEvent> {
   const reader = body.getReader();

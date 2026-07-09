@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { Agent, type SDKAgent } from "@cursor/sdk";
 import { BrowserSession, observationText } from "./browser-session.ts";
@@ -230,6 +231,12 @@ export class AgentSession {
       this.job.status = "error";
       this.job.error = reason;
       this.emit({ type: "job_status", jobId: this.job.id, status: "error" });
+      // A failed take can leave hundreds of MB of screencast frames behind.
+      // The success path already removes these; do the same on failure so a
+      // run of stalls doesn't exhaust the disk on the recording box.
+      try {
+        fs.rmSync(path.join(jobDir(this.job.id), "frames"), { recursive: true, force: true });
+      } catch {}
     }
     await this.browser?.close().catch(() => {});
     this.browser = null;
@@ -516,7 +523,7 @@ function noteInstantAgentFailure(): boolean {
 }
 
 export function createSession(): AgentSession {
-  const id = `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const id = `sess-${randomUUID()}`;
   return getOrCreateSession(id);
 }
 

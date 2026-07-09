@@ -147,7 +147,8 @@ export class BrowserSession {
     const kb = await createKernelBrowser(viewport);
     let browser: Browser;
     try {
-      browser = await chromium.connectOverCDP(kb.cdpWsUrl, { timeout: 30_000 });
+      const cdpTimeout = Number(process.env.CDP_CONNECT_TIMEOUT_MS) || 30_000;
+      browser = await chromium.connectOverCDP(kb.cdpWsUrl, { timeout: cdpTimeout });
     } catch (err) {
       await deleteKernelBrowser(kb.sessionId);
       throw err;
