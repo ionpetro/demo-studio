@@ -10,11 +10,12 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { disposeAllSessions, getOrCreateSession } from "../src/engine/agent-session.ts";
 import { flushDb } from "../src/engine/db.ts";
 import type { SessionEvent } from "../src/engine/types.ts";
-import { jobDir } from "../src/engine/jobs.ts";
+import { jobDir, sweepOldJobDirs } from "../src/engine/jobs.ts";
 import { failAllActiveRuns, loadDemoRun } from "../src/engine/headless-run.ts";
 import { listUserJobs, loadJobRecord } from "../src/engine/db.ts";
 import { getAuthor } from "../src/engine/author.ts";
 import { buildMcpServer } from "./mcp.ts";
+import { authorizeMcp, authServerMetadata, protectedResourceMetadata, wwwAuthenticate } from "./mcp-auth.ts";
 
 const PORT = Number(process.env.PORT ?? 3001);
 
@@ -61,6 +62,8 @@ function cors(origin: string | undefined): Record<string, string> {
     "Access-Control-Allow-Origin": origin ?? "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, Mcp-Session-Id, Mcp-Protocol-Version",
+    // Browser-based MCP clients must be able to read the OAuth challenge.
+    "Access-Control-Expose-Headers": "WWW-Authenticate",
     Vary: "Origin",
   };
 }
@@ -71,12 +74,6 @@ function publicBase(req: http.IncomingMessage): string {
   if (fromEnv) return fromEnv;
   const proto = (req.headers["x-forwarded-proto"] as string)?.split(",")[0] ?? "http";
   return `${proto}://${req.headers.host ?? `localhost:${PORT}`}`;
-}
-
-function mcpAuthorized(req: http.IncomingMessage): boolean {
-  const token = process.env.MCP_AUTH_TOKEN;
-  if (!token) return true;
-  return req.headers.authorization === `Bearer ${token}`;
 }
 
 /**
@@ -107,10 +104,25 @@ function json(res: http.ServerResponse, status: number, body: unknown, origin?: 
   res.end(payload);
 }
 
+// /mcp is reachable unauthenticated by default (MCP_AUTH_TOKEN is optional), so
+// an unbounded body would let an anonymous caller OOM the ~1GB box. Cap it and
+// surface a taggable error the handlers turn into a 413.
+const MAX_BODY_BYTES = 1024 * 1024; // 1MB — request bodies here are tiny JSON.
+class PayloadTooLargeError extends Error {}
+
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (c) => chunks.push(c));
+    let size = 0;
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (size > MAX_BODY_BYTES) {
+        reject(new PayloadTooLargeError("request body too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
@@ -132,10 +144,52 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     return;
   }
 
+  // --- OAuth discovery (MCP authorization spec) -----------------------------
+  // Public by requirement: MCP clients fetch these anonymously (possibly from a
+  // browser) to find the authorization server before they have any token.
+  if (req.method === "GET" && /^\/\.well-known\/oauth-protected-resource(\/mcp)?$/.test(pathname)) {
+    const payload = JSON.stringify(protectedResourceMetadata(publicBase(req)));
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Content-Length": Buffer.byteLength(payload),
+      "Access-Control-Allow-Origin": "*",
+      "Cache-Control": "public, max-age=3600",
+    });
+    res.end(payload);
+    return;
+  }
+  if (req.method === "GET" && pathname === "/.well-known/oauth-authorization-server") {
+    // Proxied from Clerk for older clients that discover on the resource origin.
+    const meta = await authServerMetadata();
+    if (!meta) {
+      json(res, 404, { error: "OAuth is not configured on this server" }, origin);
+      return;
+    }
+    const payload = JSON.stringify(meta);
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Content-Length": Buffer.byteLength(payload),
+      "Access-Control-Allow-Origin": "*",
+      "Cache-Control": "public, max-age=3600",
+    });
+    res.end(payload);
+    return;
+  }
+
   // --- MCP endpoint (streamable HTTP, stateless) ---------------------------
   if (pathname === "/mcp") {
-    if (!mcpAuthorized(req)) {
-      json(res, 401, { jsonrpc: "2.0", error: { code: -32000, message: "Unauthorized" }, id: null }, origin);
+    const auth = await authorizeMcp(req);
+    if (!auth) {
+      // Standard OAuth challenge: clients follow resource_metadata to Clerk,
+      // register dynamically, run PKCE, and retry with a bearer token.
+      const payload = JSON.stringify({ error: "invalid_token", error_description: "Missing or invalid access token" });
+      res.writeHead(401, {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(payload),
+        "WWW-Authenticate": wwwAuthenticate(publicBase(req)),
+        ...cors(origin),
+      });
+      res.end(payload);
       return;
     }
     if (req.method !== "POST") {
@@ -149,11 +203,15 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
     let body: unknown;
     try {
       body = JSON.parse(await readBody(req));
-    } catch {
+    } catch (err) {
+      if (err instanceof PayloadTooLargeError) {
+        json(res, 413, { jsonrpc: "2.0", error: { code: -32000, message: "Payload too large" }, id: null }, origin);
+        return;
+      }
       json(res, 400, { jsonrpc: "2.0", error: { code: -32700, message: "Parse error" }, id: null }, origin);
       return;
     }
-    const mcpServer = buildMcpServer(publicBase(req));
+    const mcpServer = buildMcpServer(publicBase(req), auth.userId);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => {
       transport.close();
@@ -243,7 +301,11 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       const body = JSON.parse(await readBody(req));
       message = body.message;
       model = body.model;
-    } catch {
+    } catch (err) {
+      if (err instanceof PayloadTooLargeError) {
+        json(res, 413, { error: "request body too large" }, origin);
+        return;
+      }
       json(res, 400, { error: "invalid json" }, origin);
       return;
     }
@@ -345,6 +407,8 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`demo-studio backend listening on :${PORT}`);
+  // Reclaim disk from old job dirs left by prior processes on this box.
+  sweepOldJobDirs();
 });
 
 // Graceful shutdown: a deploy/restart must fail open jobs (persisted to the

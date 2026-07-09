@@ -5,6 +5,7 @@
  * confirmation turn) and tracks its lifecycle so external agents can submit a
  * demo and poll until the video is ready.
  */
+import { randomUUID } from "node:crypto";
 import { getOrCreateSession } from "./agent-session.ts";
 import { loadRunRecord, persistRun } from "./db.ts";
 import type { ActionLog, SessionEvent } from "./types.ts";
@@ -16,6 +17,8 @@ export interface DemoRun {
   goal: string;
   startUrl: string;
   status: RunStatus;
+  /** Clerk user who requested the run (OAuth MCP callers); owns the job/video. */
+  userId?: string;
   jobId?: string;
   liveViewUrl?: string;
   durationSec?: number;
@@ -26,6 +29,13 @@ export interface DemoRun {
 
 // Pinned to globalThis so Next.js dev-mode HMR doesn't wipe live runs.
 const runs: Map<string, DemoRun> = ((globalThis as any).__demoRuns ??= new Map());
+
+// Per-run secret backing the internal agent-session id. Kept out of DemoRun so
+// it never leaks through the run's JSON (watch pages, /api/runs, DB) — the
+// runId itself is public via the watchUrl, so the session id must not be
+// derivable from it. A holder of a watch link must not be able to POST into
+// the run's live agent session.
+const runSessionKeys: Map<string, string> = ((globalThis as any).__demoRunSessionKeys ??= new Map());
 
 const autonomousPrompt = (goal: string, startUrl: string) => `Autonomous run — there is no human in this chat. Never ask questions or wait for confirmation; the plan below is pre-approved.
 
@@ -64,14 +74,22 @@ function releaseRunSlot(): void {
   else activeRuns--;
 }
 
-export function startDemoRun(goal: string, startUrl: string): DemoRun {
+export function startDemoRun(goal: string, startUrl: string, userId?: string): DemoRun {
   const url = new URL(startUrl); // throws on invalid URL
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new Error("startUrl must be an http(s) URL");
   }
+  // Defensive cap at the shared entry point — not every caller passes through
+  // the MCP tool's Zod schema, and an unbounded goal is fed straight to the
+  // model as prompt text.
+  goal = goal.trim();
+  if (!goal) throw new Error("goal must not be empty");
+  if (goal.length > 500) throw new Error("goal must be 500 characters or fewer");
 
-  const id = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-  const run: DemoRun = { id, goal, startUrl, status: "planning", actions: [], createdAt: Date.now() };
+  // Unguessable id: the public watchUrl and status endpoints are keyed only on
+  // this, so an enumerable id would let anyone read/poll other people's runs.
+  const id = `run-${randomUUID()}`;
+  const run: DemoRun = { id, goal, startUrl, userId, status: "planning", actions: [], createdAt: Date.now() };
   runs.set(id, run);
   persistRun(run);
   void (async () => {
@@ -81,6 +99,8 @@ export function startDemoRun(goal: string, startUrl: string): DemoRun {
       if ((run.status as RunStatus) !== "error") await executeRun(run);
     } finally {
       releaseRunSlot();
+      // Run is terminal; the session secret is no longer needed.
+      runSessionKeys.delete(run.id);
     }
   })();
   return run;
@@ -111,8 +131,18 @@ async function executeRun(run: DemoRun) {
 }
 
 function runAttempt(run: DemoRun, attempt: number): Promise<void> {
-  // Fresh session per attempt; the sess- prefix keeps it valid for the session API.
-  const session = getOrCreateSession(`sess-${run.id}-a${attempt}`);
+  // Fresh session per attempt. The id is derived from a per-run random secret,
+  // not the (public) runId, so a watch-link holder can't compute it and POST
+  // into the live agent session. The sess- prefix keeps it valid for the API.
+  let key = runSessionKeys.get(run.id);
+  if (!key) {
+    key = randomUUID();
+    runSessionKeys.set(run.id, key);
+  }
+  const session = getOrCreateSession(`sess-${key}-a${attempt}`);
+  // Attribute the session (and therefore the job/video) to the OAuth caller so
+  // MCP-created videos land in their library like UI-created ones.
+  session.setUser(run.userId);
 
   // Watchdog: an agent stream can hang mid-run (observed in prod), leaving the
   // run stuck in "recording" with a live cloud browser leaking. If no event

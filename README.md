@@ -72,8 +72,19 @@ Stable links served by the backend:
   `302` once done (`?download` for attachment) — to the Supabase storage copy
   when configured, else to the local file
 
-Set `MCP_AUTH_TOKEN` on the server to require a `Authorization: Bearer` header
-on `/mcp`. Set `PUBLIC_URL` (see `.env.example`) so returned links use your
+`/mcp` is protected with OAuth (the standard MCP authorization flow): an
+unauthenticated request gets a `401` with a `WWW-Authenticate` challenge, the
+client discovers Clerk via `/.well-known/oauth-protected-resource/mcp`,
+registers itself dynamically, and opens a browser for the user to sign in —
+`claude mcp add` handles all of this automatically. Requirements on the
+server: `CLERK_SECRET_KEY` + `CLERK_PUBLISHABLE_KEY`, and **Dynamic client
+registration** enabled in the Clerk dashboard (Configure → OAuth
+applications). Videos created over MCP are attributed to the signed-in user
+and appear in their library. Two escape hatches: `MCP_AUTH_TOKEN` (static
+bearer accepted alongside OAuth, for CI) and `MCP_ALLOW_ANONYMOUS=1` (no auth,
+bare local runs only — never set it on a public deployment).
+
+Set `PUBLIC_URL` (see `.env.example`) so returned links use your
 public host — without it, links are local-only and flagged as such. Set
 `SUPABASE_URL` + `SUPABASE_SECRET_KEY` so finished videos are uploaded to a
 public storage bucket instead of living solely on the recording machine's disk.
@@ -103,7 +114,8 @@ worth making (PR walkthroughs, visual bugs, feature demos), when it isn't
 (logins, unfinished work, sensitive data), and to only share the watch URL
 when the server marks it `shareable`.
 
-Local test without deploying:
+Local test without deploying (with Clerk keys in `.env` the OAuth flow works
+locally too; set `MCP_ALLOW_ANONYMOUS=1` to skip auth entirely):
 
 ```bash
 npm run backend           # serves /mcp on :3001

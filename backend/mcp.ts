@@ -59,7 +59,7 @@ async function runSnapshot(run: DemoRun, baseUrl: string) {
 
 const asText = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] });
 
-export function buildMcpServer(baseUrl: string): McpServer {
+export function buildMcpServer(baseUrl: string, userId?: string): McpServer {
   const server = new McpServer({ name: "demo-studio", version: "0.1.0" });
 
   server.registerTool(
@@ -76,12 +76,12 @@ export function buildMcpServer(baseUrl: string): McpServer {
         "finished videos are viewable by anyone with the link — never include credentials or goals that " +
         "pay for anything or destroy data.",
       inputSchema: {
-        goal: z.string().min(1).describe("What the video should demonstrate, in one or two sentences."),
+        goal: z.string().min(1).max(500).describe("What the video should demonstrate, in one or two sentences."),
         startUrl: z.string().url().describe("Full https:// URL of the page where the demo starts."),
       },
     },
     async ({ goal, startUrl }) => {
-      const run = startDemoRun(goal, startUrl);
+      const run = startDemoRun(goal, startUrl, userId);
       const snap = await runSnapshot(run, baseUrl);
       return asText({
         ...snap,
