@@ -138,5 +138,5 @@ export type SessionEvent =
   | { type: "action"; jobId: string; n: number; action: string; caption: string; ok: boolean; error?: string }
   | { type: "job_status"; jobId: string; status: JobStatus; error?: string }
   | { type: "compose_progress"; jobId: string; stage: string; pct?: number }
-  | { type: "video_ready"; jobId: string; videoUrl: string; durationSec: number }
+  | { type: "video_ready"; jobId: string; videoUrl: string; durationSec: number; chapters?: { title: string; start: number }[] }
   | { type: "error"; message: string };

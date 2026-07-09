@@ -85,7 +85,7 @@ export default function VideosPage() {
               <Link
                 key={v.id}
                 href={`/videos/${v.id}`}
-                className="group flex flex-col overflow-hidden rounded-xl border bg-background transition-colors hover:border-rec/50"
+                className="group flex flex-col overflow-hidden rounded-xl border bg-background"
               >
                 <div className="relative aspect-video bg-black">
                   {/* Poster spares the grid a metadata fetch per tile; older videos without one keep the first-frame fallback. */}

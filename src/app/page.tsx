@@ -1,9 +1,9 @@
 "use client";
 
-import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
+import { Show, SignInButton, UserButton } from "@clerk/nextjs";
 import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
-import { CheckIcon, ClapperboardIcon, CopyIcon, DownloadIcon, FilmIcon, RotateCcwIcon, SquareArrowOutUpRightIcon, VideoIcon } from "lucide-react";
+import { CheckIcon, ClapperboardIcon, CopyIcon, DownloadIcon, FilmIcon, PanelRightCloseIcon, PanelRightOpenIcon, RotateCcwIcon, SquareArrowOutUpRightIcon, VideoIcon } from "lucide-react";
 
 import {
   Conversation,
@@ -34,19 +34,13 @@ import {
   PlanTitle,
 } from "@/components/ai-elements/plan";
 import { Shimmer } from "@/components/ai-elements/shimmer";
-import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 import { WebPreview, WebPreviewBody, WebPreviewNavigation, WebPreviewUrl } from "@/components/ai-elements/web-preview";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { DemoPlayer } from "@/components/demo-player";
 import { useDemoSession, type ChatMessage } from "@/hooks/use-demo-session";
 import { apiBase } from "@/lib/api-base";
 import { cn } from "@/lib/utils";
-
-const SUGGESTIONS = [
-  "Demo the GamerPlug referral leaderboard",
-  "Walk through gamerplug.app tournaments",
-  "Show searching Hacker News for 'AI agents'",
-];
 
 function fmtTimecode(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -136,6 +130,16 @@ export default function Home() {
   const lastMessage = messages[messages.length - 1];
   const awaitingReply = busy && lastMessage?.role === "user";
 
+  // The stage only opens once the agent is actually doing something (plan
+  // locked, browser live, or a finished cut) — before that it's chat-only.
+  // Manual collapse survives until the next activity burst re-opens it.
+  const stageActive = stage.mode !== "idle";
+  const [stageCollapsed, setStageCollapsed] = useState(false);
+  useEffect(() => {
+    if (stageActive) setStageCollapsed(false);
+  }, [stageActive]);
+  const stageOpen = stageActive && !stageCollapsed;
+
   const submit = (text: string) => {
     if (!text.trim()) return;
     setInput("");
@@ -145,23 +149,28 @@ export default function Home() {
   return (
     <div className="flex h-screen overflow-hidden">
       {/* ── producer rail ───────────────────────────────────────────── */}
-      <aside className="flex w-105 shrink-0 flex-col border-r bg-background">
+      <aside className="flex min-w-0 flex-1 flex-col bg-background">
         <header className="flex h-14 shrink-0 items-center justify-between border-b px-5">
           <div className="font-display text-xl tracking-tight">
             demo<span className="text-rec">·</span>studio
           </div>
           <div className="flex items-center gap-3">
-            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-              producer line
-            </div>
+            {stageActive && stageCollapsed && (
+              <button
+                type="button"
+                title="Open the stage"
+                onClick={() => setStageCollapsed(false)}
+                className="text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <PanelRightOpenIcon className="size-4" />
+              </button>
+            )}
             <ThemeToggle />
             <Show when="signed-out">
+              {/* One entry point — Clerk's sign-in screen links to sign-up. */}
               <SignInButton>
-                <Button size="sm" variant="outline">sign in</Button>
+                <Button size="sm">sign in</Button>
               </SignInButton>
-              <SignUpButton>
-                <Button size="sm">sign up</Button>
-              </SignUpButton>
             </Show>
             <Show when="signed-in">
               <Link
@@ -177,13 +186,22 @@ export default function Home() {
         </header>
 
         <Conversation className="min-h-0 flex-1">
-          <ConversationContent className="gap-5 px-4 py-5">
+          <ConversationContent className="mx-auto w-full max-w-3xl gap-5 px-4 py-5">
             {messages.length === 0 ? (
-              <ConversationEmptyState
-                icon={<ClapperboardIcon className="size-7" />}
-                title="Direct it. I'll shoot it."
-                description="Tell me what you want recorded — a feature, a flow, a page. I'll plan the shot list with you, drive a live browser while you watch, and hand you the MP4."
-              />
+              <div className="flex flex-1 flex-col items-center justify-center gap-6">
+                <ConversationEmptyState
+                  className="flex-none"
+                  icon={<ClapperboardIcon className="size-7" />}
+                  title=""
+                  description="Tell me what you want recorded — a feature, a flow, a page. I'll plan the shot list with you, drive a live browser while you watch, and hand you the MP4."
+                />
+                <div className="flex flex-col items-center gap-2">
+                  <div className="font-mono text-[10px] uppercase tracking-[0.3em] text-muted-foreground/70">
+                    or let your own agent direct
+                  </div>
+                  <CopyAgentInstructions />
+                </div>
+              </div>
             ) : (
               messages.map((m) => <ChatMessageView key={m.id} message={m} />)
             )}
@@ -200,15 +218,8 @@ export default function Home() {
           </div>
         )}
 
-        <div className="flex flex-col gap-3 border-t p-4">
-          {messages.length === 0 && (
-            <Suggestions>
-              {SUGGESTIONS.map((s) => (
-                <Suggestion key={s} suggestion={s} onClick={submit} />
-              ))}
-            </Suggestions>
-          )}
-          <PromptInput onSubmit={({ text }) => submit(text)}>
+        <div className="border-t p-4">
+          <PromptInput className="mx-auto w-full max-w-3xl" onSubmit={({ text }) => submit(text)}>
             <PromptInputBody>
               <PromptInputTextarea
                 placeholder="What should we record today?"
@@ -237,47 +248,49 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* ── stage ───────────────────────────────────────────────────── */}
-      <main className="flex min-w-0 flex-1 flex-col bg-bg-deep">
-        <div className="flex h-14 shrink-0 items-center justify-between border-b px-5 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+      {/* ── stage — slides open when the agent starts working ─────────── */}
+      <main
+        className="flex shrink-0 flex-col overflow-hidden border-l bg-bg-deep transition-[width] duration-500 ease-in-out"
+        style={{ width: stageOpen ? "calc(100% - 26.25rem)" : "0px" }}
+        aria-hidden={!stageOpen}
+      >
+        <div className="flex h-14 shrink-0 items-center justify-between gap-4 border-b px-5 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
           <span className={cn("flex items-center gap-2", recording && "text-rec")}>
             <span className={cn("size-2 rounded-full bg-current", recording && "rec-dot")} />
             {recording ? "rec" : stage.mode === "done" ? "wrap" : "standby"}
           </span>
-          <span>cam·01 / kernel cloud</span>
-          <span className="tabular-nums">{fmtTimecode(recording ? clock : 0)}</span>
+          <span>cloud</span>
+          <span className="flex items-center gap-3">
+            <span className="tabular-nums">{fmtTimecode(recording ? clock : 0)}</span>
+            <button
+              type="button"
+              title="Collapse the stage"
+              onClick={() => setStageCollapsed(true)}
+              className="transition-colors hover:text-foreground"
+            >
+              <PanelRightCloseIcon className="size-4" />
+            </button>
+          </span>
         </div>
 
-        <div className="relative min-h-0 flex-1 p-6">
+        <div className="relative flex min-h-0 min-w-[32rem] flex-1 items-center justify-center p-6">
           <div
             className={cn(
-              "relative flex h-full flex-col overflow-hidden rounded-xl border bg-background shadow-[0_0_80px_-20px_oklch(0_0_0/60%)]",
+              "relative flex w-full flex-col overflow-hidden rounded-xl border bg-background shadow-[0_0_80px_-20px_oklch(0_0_0/60%)]",
+              // Live/done: the card hugs the media frame (16:10 browser, 16:9
+              // video) instead of stretching — no letterbox bars. Width capped
+              // so chrome + media always fit the available height.
+              stage.mode === "live" || stage.mode === "done" ? "max-h-full" : "h-full",
               recording && "border-rec/50 ring-1 ring-rec/30",
             )}
+            style={
+              stage.mode === "live"
+                ? { maxWidth: "calc((100vh - 9.25rem) * 1.6)" }
+                : stage.mode === "done"
+                  ? { maxWidth: "calc((100vh - 10.75rem) * 1.7778)" }
+                  : undefined
+            }
           >
-            {stage.mode === "idle" && (
-              <div className="flex flex-1 flex-col items-center justify-center gap-4 p-10 text-center">
-                <div className="font-mono text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
-                  — standby —
-                </div>
-                <h1 className="font-display text-5xl leading-tight tracking-tight">
-                  Direct it.
-                  <br />
-                  I&apos;ll shoot it.
-                </h1>
-                <p className="max-w-md text-sm text-muted-foreground">
-                  An agent plans your browser demo with you, drives a real cloud browser on camera,
-                  and delivers a captioned MP4.
-                </p>
-                <div className="mt-2 flex flex-col items-center gap-2">
-                  <div className="font-mono text-[10px] uppercase tracking-[0.3em] text-muted-foreground/70">
-                    or let your own agent direct
-                  </div>
-                  <CopyAgentInstructions />
-                </div>
-              </div>
-            )}
-
             {stage.mode === "plan" && (
               <div className="flex flex-1 items-center justify-center p-10">
                 <Plan defaultOpen className="w-full max-w-xl">
@@ -318,15 +331,24 @@ export default function Home() {
 
             {stage.mode === "live" && (
               <Fragment>
-                {stage.liveViewUrl ? (
-                  <WebPreview className="flex-1 border-0" defaultUrl={stage.liveViewUrl}>
+                {/* Unmounted while composing — a translucent overlay left the
+                    live browser visibly moving underneath the film screen. */}
+                {stage.composing ? null : stage.liveViewUrl ? (
+                  <WebPreview className="w-full border-0" defaultUrl={stage.liveViewUrl}>
                     <WebPreviewNavigation>
+                      {/* decorative macOS traffic lights */}
+                      <span aria-hidden className="flex items-center gap-1.5 pl-1.5 pr-2">
+                        <span className="size-3 rounded-full bg-[#ff5f57]" />
+                        <span className="size-3 rounded-full bg-[#febc2e]" />
+                        <span className="size-3 rounded-full bg-[#28c840]" />
+                      </span>
                       <WebPreviewUrl readOnly />
                     </WebPreviewNavigation>
-                    <WebPreviewBody allow="clipboard-read; clipboard-write" />
+                    {/* Kernel viewport is 1280×800 — matching the ratio kills the letterbox */}
+                    <WebPreviewBody className="aspect-[1280/800] w-full flex-none" allow="clipboard-read; clipboard-write" />
                   </WebPreview>
                 ) : (
-                  <div className="flex flex-1 items-center justify-center">
+                  <div className="flex aspect-[1280/800] w-full items-center justify-center">
                     <Shimmer className="font-mono text-xs uppercase tracking-[0.3em]">
                       — opening camera —
                     </Shimmer>
@@ -353,7 +375,7 @@ export default function Home() {
                 )}
 
                 {stage.composing && (
-                  <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-6 bg-background/90 backdrop-blur">
+                  <div className="flex aspect-[1280/800] w-full flex-col items-center justify-center gap-6 bg-background">
                     <div className="spool" />
                     <Shimmer className="font-mono text-xs uppercase tracking-[0.3em]">
                       developing film
@@ -405,8 +427,7 @@ export default function Home() {
 
             {stage.mode === "done" && (
               <Fragment>
-                {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                <video className="min-h-0 flex-1 bg-black object-contain" src={stage.videoUrl} controls autoPlay />
+                <DemoPlayer className="rounded-none border-0" src={stage.videoUrl} chapters={stage.chapters} />
                 <div className="flex items-center justify-between border-t px-4 py-3">
                   <span className="font-mono text-xs text-muted-foreground">
                     <b className="text-ok">wrap ✓</b> · {stage.durationSec.toFixed(1)}s · 1280×720 ·
@@ -415,16 +436,16 @@ export default function Home() {
                   <span className="flex gap-2">
                     <Button asChild size="sm">
                       <Link href={`/videos/${stage.jobId}`} target="_blank">
-                        <SquareArrowOutUpRightIcon /> watch page
+                        <SquareArrowOutUpRightIcon /> open video
                       </Link>
                     </Button>
-                    <Button asChild size="sm" variant="outline">
+                    <Button asChild size="sm" variant="outline" title="Download MP4">
                       <a href={`${stage.videoUrl}?download`}>
-                        <DownloadIcon /> download mp4
+                        <DownloadIcon />
                       </a>
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => setStage({ mode: "idle" })}>
-                      <RotateCcwIcon /> new take
+                    <Button size="sm" variant="outline" title="New take" onClick={() => setStage({ mode: "idle" })}>
+                      <RotateCcwIcon />
                     </Button>
                   </span>
                 </div>

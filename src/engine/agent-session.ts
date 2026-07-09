@@ -487,6 +487,7 @@ export class AgentSession {
               jobId: job.id,
               videoUrl: job.videoUrl ?? apiUrl(`/api/jobs/${job.id}/video`),
               durationSec: out.durationSec,
+              chapters: out.chapters,
             });
 
             this.job = null;

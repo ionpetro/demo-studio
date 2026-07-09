@@ -18,7 +18,7 @@ export type StageState =
   | { mode: "idle" }
   | { mode: "plan"; goal: string; startUrl: string }
   | { mode: "live"; jobId: string; liveViewUrl?: string; composing: boolean }
-  | { mode: "done"; jobId: string; videoUrl: string; durationSec: number };
+  | { mode: "done"; jobId: string; videoUrl: string; durationSec: number; chapters?: { title: string; start: number }[] };
 
 export interface Tick {
   n: number;
@@ -42,7 +42,7 @@ type SessionEvent =
   | { type: "action"; n: number; action: string; caption: string; ok: boolean }
   | { type: "job_status"; status: string }
   | { type: "compose_progress"; stage: string; pct?: number }
-  | { type: "video_ready"; jobId: string; videoUrl: string; durationSec: number }
+  | { type: "video_ready"; jobId: string; videoUrl: string; durationSec: number; chapters?: { title: string; start: number }[] }
   | { type: "error"; message: string };
 
 let nextId = 0;
@@ -102,11 +102,15 @@ export function useDemoSession() {
       try {
         const res = await fetch(apiUrl(`/api/videos/${jobId}`));
         if (res.ok) {
-          const v = (await res.json()) as { videoUrl: string; durationSec: number | null };
+          const v = (await res.json()) as {
+            videoUrl: string;
+            durationSec: number | null;
+            chapters?: { title: string; start: number }[] | null;
+          };
           liveJobRef.current = null;
           setRecStart(null);
           setError(null);
-          setStage({ mode: "done", jobId, videoUrl: v.videoUrl, durationSec: v.durationSec ?? 0 });
+          setStage({ mode: "done", jobId, videoUrl: v.videoUrl, durationSec: v.durationSec ?? 0, chapters: v.chapters ?? undefined });
           return true;
         }
       } catch {
@@ -181,7 +185,7 @@ export function useDemoSession() {
           liveJobRef.current = null;
           setRecStart(null);
           setCompose(null);
-          setStage({ mode: "done", jobId: ev.jobId, videoUrl: ev.videoUrl, durationSec: ev.durationSec });
+          setStage({ mode: "done", jobId: ev.jobId, videoUrl: ev.videoUrl, durationSec: ev.durationSec, chapters: ev.chapters });
           break;
         case "error":
           setError(ev.message);
