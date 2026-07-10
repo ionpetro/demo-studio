@@ -353,11 +353,14 @@ export default function Home() {
               recording && "border-rec/50 ring-1 ring-rec/30",
             )}
             style={
-              stage.mode === "live" || stage.mode === "login"
-                ? { maxWidth: "calc((100vh - 9.25rem) * 1.6)" }
-                : stage.mode === "done"
-                  ? { maxWidth: "calc((100vh - 10.75rem) * 1.7778)" }
-                  : undefined
+              // Live reserves 6.5rem extra for the action log under the view.
+              stage.mode === "live"
+                ? { maxWidth: "calc((100vh - 15.75rem) * 1.6)" }
+                : stage.mode === "login"
+                  ? { maxWidth: "calc((100vh - 9.25rem) * 1.6)" }
+                  : stage.mode === "done"
+                    ? { maxWidth: "calc((100vh - 10.75rem) * 1.7778)" }
+                    : undefined
             }
           >
             {stage.mode === "plan" && (
@@ -450,22 +453,34 @@ export default function Home() {
                   </div>
                 )}
 
-                {!stage.composing && ticks.length > 0 && (
-                  <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col gap-1 border-t bg-background/85 p-3 font-mono text-xs backdrop-blur">
-                    {ticks.map((t, i) => (
-                      <div
-                        key={`${t.n}-${i}`}
-                        className={cn(
-                          "flex items-center gap-3",
-                          i < ticks.length - 1 && "opacity-40",
-                        )}
-                      >
-                        <span className="text-muted-foreground">{String(t.n).padStart(2, "0")}</span>
-                        <span className="uppercase tracking-widest text-muted-foreground">{t.action}</span>
-                        <span className="flex-1 truncate">{t.caption}</span>
-                        <span className={t.ok ? "text-ok" : "text-rec"}>{t.ok ? "✓" : "✗"}</span>
+                {/* Action log: in normal flow below the live view (an absolute
+                    overlay used to cover the bottom of the screen). Fixed
+                    height — 4 rows max, newest at the bottom — so the card
+                    doesn't resize as ticks arrive. */}
+                {!stage.composing && (
+                  <div className="flex h-[6.5rem] shrink-0 flex-col justify-end gap-1 overflow-hidden border-t bg-background p-3 font-mono text-xs">
+                    {ticks.length === 0 ? (
+                      <div className="flex items-center gap-3 opacity-40">
+                        <span className="text-muted-foreground">00</span>
+                        <span className="uppercase tracking-widest text-muted-foreground">standby</span>
+                        <span className="flex-1 truncate">waiting for the first action</span>
                       </div>
-                    ))}
+                    ) : (
+                      ticks.map((t, i) => (
+                        <div
+                          key={`${t.n}-${i}`}
+                          className={cn(
+                            "flex items-center gap-3",
+                            i < ticks.length - 1 && "opacity-40",
+                          )}
+                        >
+                          <span className="text-muted-foreground">{String(t.n).padStart(2, "0")}</span>
+                          <span className="uppercase tracking-widest text-muted-foreground">{t.action}</span>
+                          <span className="flex-1 truncate">{t.caption}</span>
+                          <span className={t.ok ? "text-ok" : "text-rec"}>{t.ok ? "✓" : "✗"}</span>
+                        </div>
+                      ))
+                    )}
                   </div>
                 )}
 
