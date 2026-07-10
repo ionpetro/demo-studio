@@ -486,7 +486,7 @@ export default function Home() {
 
                 {stage.composing && (
                   <div className="flex aspect-[1280/800] w-full flex-col items-center justify-center gap-6 bg-background">
-                    <LoopaLoader className="h-10 text-muted-foreground" />
+                    <LoopaLoader className="h-6 text-muted-foreground/40" />
                     <Shimmer className="font-mono text-xs uppercase tracking-[0.3em]">
                       developing film
                     </Shimmer>
