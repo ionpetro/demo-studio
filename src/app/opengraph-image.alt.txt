@@ -1,0 +1,1 @@
+Loopa — a browser window at www.loopa.sh with an agent cursor, on a warm gradient background

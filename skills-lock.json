@@ -130,7 +130,7 @@
     "record-loopa": {
       "source": "ionpetro/loopa",
       "sourceType": "github",
-      "skillPath": "skills/record-demo/SKILL.md",
+      "skillPath": "skills/record-loopa/SKILL.md",
       "computedHash": "7d9d6a8ff3bc7fbece6cfbf7f35bd336c420b632ca11d298617f0b4d699536c2"
     }
   }
