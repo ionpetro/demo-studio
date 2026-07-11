@@ -40,6 +40,15 @@ function getPool(): pg.Pool {
     max: 3,
     // Supabase's pooler certs are signed by their own CA.
     ssl: { rejectUnauthorized: false },
+    // Every write is serialized through writeChain (see tryDb); a query that
+    // hangs without rejecting — e.g. a connection dropped across a laptop
+    // sleep — would otherwise queue all persistence behind it forever, with
+    // nothing logged. Bound every stage so a stuck write fails loudly and the
+    // chain moves on.
+    connectionTimeoutMillis: 10_000,
+    query_timeout: 30_000,
+    statement_timeout: 30_000,
+    keepAlive: true,
   });
   return pool;
 }
