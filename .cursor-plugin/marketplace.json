@@ -1,0 +1,13 @@
+{
+  "name": "loopa",
+  "owner": { "name": "Ion Petropoulos", "email": "ionpetro@gmail.com" },
+  "metadata": {
+    "description": "Record captioned demo videos of live web pages with Loopa's cloud browser agent."
+  },
+  "plugins": [
+    {
+      "name": "loopa",
+      "source": "cursor-plugin"
+    }
+  ]
+}

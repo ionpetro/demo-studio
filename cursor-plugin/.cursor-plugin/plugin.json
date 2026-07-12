@@ -2,7 +2,7 @@
   "name": "loopa",
   "description": "Record captioned demo videos of live web pages with Loopa's cloud browser agent, right from Cursor.",
   "version": "0.1.0",
-  "author": "Loopa",
+  "author": { "name": "Loopa", "email": "ionpetro@gmail.com" },
   "homepage": "https://loopa.sh",
   "repository": "https://github.com/ionpetro/loopa",
   "keywords": ["video", "demo", "screen-recording", "browser-agent", "walkthrough", "mcp"],

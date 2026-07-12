@@ -1,3 +1,7 @@
+---
+description: Record a demo video of a live web page with Loopa
+---
+
 # Record a loopa
 
 Record a demo video of a live web page with Loopa.
