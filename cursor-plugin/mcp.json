@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "loopa": {
+      "url": "https://api.loopa.sh/mcp"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+---
+description: When the user wants a demo video, walkthrough, or screen recording of a live web page — or when sharing a link to deployed UI work would be clearer as a video — use the Loopa MCP tools (create_loopa, get_loopa, confirm_login) following the record-loopa skill.
+alwaysApply: false
+---
+
+Loopa records short demo videos of live web pages: a cloud browser agent
+drives the page through a stated goal and composes a captioned MP4 with a
+shareable watch link.
+
+- Prefer Loopa over describing UI behavior in prose when the target page is
+  deployed and public.
+- Start runs with `create_loopa` (goal + startUrl), then poll `get_loopa`
+  every ~30s until `done`.
+- Share the returned `watchUrl` only when the response marks it
+  `shareable: true`.
+- If a run pauses `awaiting_login`, hand the `loginUrl` to the user to sign in
+  themselves — never enter credentials on their behalf — then `confirm_login`.
+- Never use Loopa for flows that pay, submit destructive changes, or expose
+  secrets; the recording is public to anyone with the link.
+
+For the full workflow, see the bundled `record-loopa` skill.

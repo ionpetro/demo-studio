@@ -1,10 +1,10 @@
 ---
 name: record-loopa
 description: |
-  Record a short cloud agent loopa of a live web page using Loopa. An
+  Record a short demo video (a "loopa") of a live web page using Loopa. An
   agent drives a real cloud browser through a goal you describe and produces a
-  captioned, branded MP4 with a shareable link. Use it for feature walkthroughs, PR
-  reviews of deployed UI changes, bug reproductions on public pages, or
+  captioned, branded MP4 with a shareable link. Use it for feature walkthroughs,
+  PR reviews of deployed UI changes, bug reproductions on public pages, or
   onboarding walkthroughs. Do not use it for flows that change data, unfinished
   work, or anything exposing sensitive information.
 author: Loopa
@@ -12,26 +12,23 @@ author: Loopa
 
 # Record loopa
 
-Loopa is a cloud agent recorder. Use this skill when a
-recorded walkthrough of a live page is clearer than another chat message.
+Loopa is a cloud agent recorder. Use this skill when a recorded walkthrough of
+a live page is clearer than another chat message.
 
 ## Setup and auth
 
-The MCP endpoint is protected with OAuth. Adding the server triggers the
-standard MCP sign-in flow (a browser window to authenticate):
+This plugin bundles the Loopa MCP server (`https://api.loopa.sh/mcp`). The
+endpoint is protected with OAuth: the first time Cursor connects it opens a
+browser window to sign in. Loopas are attributed to the signed-in user and
+appear in their library at https://loopa.sh.
 
-```bash
-claude mcp add --transport http loopa https://api.loopa.sh/mcp
-```
-
-Loopas are attributed to the signed-in user and appear in their Loopa
-library. If a tool call fails with 401/unauthorized, the token expired or was
-revoked — ask the user to re-authenticate (in Claude Code: `/mcp` → select
-loopa → Authenticate). Do not retry the call until they have.
+If a tool call fails with 401/unauthorized, the token expired or was revoked —
+ask the user to re-authenticate the `loopa` MCP server from Cursor's MCP
+settings. Do not retry the call until they have.
 
 ## Use when
 
-- The user asks for a loopa, walkthrough, or video of a live web page.
+- The user asks for a loopa, demo, walkthrough, or video of a live web page.
 - You shipped or reviewed a UI change that is deployed somewhere public and a
   before/after or feature walkthrough would help reviewers.
 - A PR touches user-facing flows and a recorded run of the deployed preview
@@ -44,7 +41,8 @@ loopa → Authenticate). Do not retry the call until they have.
   follows the goal literally, including submitting forms.
 - The change is not deployed anywhere reachable by URL yet.
 - The answer is short and textual, or the user is actively iterating in chat.
-- The recording could expose secrets, tokens, or private data.
+- The recording could expose secrets, tokens, or private data — finished
+  loopas are viewable by anyone with the link.
 - The user explicitly says not to create a video.
 
 ## How to use
@@ -60,11 +58,11 @@ loopa → Authenticate). Do not retry the call until they have.
    `shareable` flag: when `true`, share the `watchUrl` right away — it works
    while the video is still generating. When `false` (a local backend without
    a public URL), the link only resolves on that machine — never paste it into
-   PRs, issues, or chat; wait for `done` and use the link `get_loopa`
-   returns then, which is durable when it is marked `shareable`.
-3. Generation takes a few minutes. Poll `get_loopa` with the `runId`
-   roughly every 30 seconds until `status` is `done` (or `error`). Failed runs
-   include the failure reason in `error` — report it verbatim.
+   PRs, issues, or chat; wait for `done` and use the link `get_loopa` returns
+   then, which is durable when it is marked `shareable`.
+3. Generation takes a few minutes. Poll `get_loopa` with the `runId` roughly
+   every 30 seconds until `status` is `done` (or `error`). Failed runs include
+   the failure reason in `error` — report it verbatim.
 4. Pages behind a login: if the user previously signed in to that site through
    Loopa, their saved browser session is reused automatically. Otherwise the
    run pauses with `status: "awaiting_login"` and returns a `loginUrl`. Show
