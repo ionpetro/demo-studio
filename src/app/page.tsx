@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
-import { SignUpButton } from "@clerk/nextjs";
+import { Show, SignUpButton } from "@clerk/nextjs";
 import { CheckIcon, CopyIcon, DownloadIcon, LockKeyholeOpenIcon, PanelRightCloseIcon, PanelRightOpenIcon, RotateCcwIcon, SquareArrowOutUpRightIcon, VideoIcon } from "lucide-react";
 
 import {
@@ -35,6 +35,7 @@ import {
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { WebPreview, WebPreviewBody, WebPreviewNavigation, WebPreviewUrl } from "@/components/ai-elements/web-preview";
 import { Button } from "@/components/ui/button";
+import { Landing } from "@/components/landing";
 import { StudioHeader } from "@/components/studio-header";
 import { LoopaPlayer } from "@/components/demo-player";
 import { LoopaLoader } from "@/components/loopa-loader";
@@ -183,6 +184,19 @@ const MODELS = [
 ];
 
 export default function Home() {
+  return (
+    <Fragment>
+      <Show when="signed-out">
+        <Landing />
+      </Show>
+      <Show when="signed-in">
+        <Studio />
+      </Show>
+    </Fragment>
+  );
+}
+
+function Studio() {
   const { messages, busy, stage, setStage, ticks, compose, error, authRequired, recStart, send, confirmLogin, model, setModel } = useLoopaSession();
   const [clock, setClock] = useState(0);
   const [input, setInput] = useState("");
