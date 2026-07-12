@@ -735,7 +735,21 @@ export class AgentSession {
             this.job = null;
             this.params = null;
             this.lastObs = null;
-            return text(JSON.stringify({ ok: true, video: out.finalPath, durationSec: out.durationSec, frames: out.frameCount }));
+            // The agent relays this to the user: give it the shareable watch
+            // page, never the server-local file path.
+            const frontendBase =
+              (process.env.FRONTEND_URL ?? "").split(",")[0].trim().replace(/\/$/, "") || "http://localhost:3000";
+            return text(JSON.stringify({
+              ok: true,
+              title,
+              durationSec: out.durationSec,
+              watchUrl: `${frontendBase}/videos/${job.id}`,
+              chapters: out.chapters.map((c) => c.title),
+              next:
+                "Tell the user the video is ready: title, duration (rounded to seconds), and the watchUrl " +
+                "as the link to watch and share — the player is already showing in their studio. " +
+                "Do not mention file paths or job ids.",
+            }));
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             await this.failJob(msg);
