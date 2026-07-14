@@ -24,7 +24,7 @@ import type {
 const MAX_ACTIONS = 24;
 /** Ceiling on model↔tool round-trips per user turn (24 actions + setup/teardown headroom). */
 const MAX_STEPS = 40;
-const OUTPUT = { fps: 30, width: 1280, height: 720, quality: 60 };
+const OUTPUT = { fps: 30, width: 1280, height: 720, quality: 75 };
 /** How long a login handoff waits for the user before giving up. */
 const LOGIN_TIMEOUT_MS = 10 * 60_000;
 

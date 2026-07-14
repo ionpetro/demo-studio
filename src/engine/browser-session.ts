@@ -5,7 +5,7 @@ import { createKernelBrowser, deleteKernelBrowser, type KernelProfileRef } from 
 import { log, since } from "./log.ts";
 import type { ActionResult, BrowserAction, FrameRef, Observation } from "./types.ts";
 
-const MAX_FRAMES = 4000; // ~5-6 min of screencast at ~10fps — runaway-job backstop
+const MAX_FRAMES = 4000; // ~3 min of screencast at ~20fps (everyNthFrame: 1) — runaway-job backstop
 
 // perfect-cursors ships a dependency-free CJS bundle; inline it into the page
 // init script so the synthetic cursor can spline-animate between the sparse
@@ -227,7 +227,7 @@ export class BrowserSession {
       quality: cfg.quality,
       maxWidth: cfg.width,
       maxHeight: cfg.height,
-      everyNthFrame: 2,
+      everyNthFrame: 1,
     });
   }
 
