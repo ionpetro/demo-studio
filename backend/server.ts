@@ -11,6 +11,7 @@ import { disposeAllSessions, getOrCreateSession, getSession } from "../src/engin
 import { failStaleWork, flushDb } from "../src/engine/db.ts";
 import type { SessionEvent } from "../src/engine/types.ts";
 import { jobDir, sweepOldJobDirs } from "../src/engine/jobs.ts";
+import { sweepSdkAgentStore } from "../src/engine/sdk-store.ts";
 import { failAllActiveRuns, loadLoopaRun } from "../src/engine/headless-run.ts";
 import { listUserJobs, loadJobRecord } from "../src/engine/db.ts";
 import { getAuthor } from "../src/engine/author.ts";
@@ -451,6 +452,7 @@ server.listen(boundPort, () => {
   log.info("http", `loopa backend listening on :${boundPort}`);
   // Reclaim disk from old job dirs left by prior processes on this box.
   sweepOldJobDirs();
+  sweepSdkAgentStore();
   // Boot reconciliation: a hard crash (OOM/SIGKILL) skips graceful shutdown,
   // leaving DB rows stuck in "recording"/"composing" while pollers see 202
   // forever. Nothing from a previous process can still be running.

@@ -122,6 +122,7 @@ function ensureSchema(): Promise<void> {
       create index if not exists loopa_messages_session_idx on loopa_messages (session_id, id);
       create index if not exists loopa_sessions_user_idx on loopa_sessions (user_id, created_at desc);
       create index if not exists loopa_jobs_user_idx on loopa_jobs (user_id, created_at desc);
+      create index if not exists loopa_runs_user_idx on loopa_runs (user_id, created_at desc);
       -- Tables live in the public schema, which Supabase exposes over PostgREST;
       -- RLS with no policies hides them from anon/authenticated API keys. Our
       -- direct connection is the table owner and bypasses RLS.
